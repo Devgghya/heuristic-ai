@@ -20,6 +20,35 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Environment Setup
+
+Create an `.env.local` file with the following variables:
+
+```
+GEMINI_API_KEY=your_gemini_key
+CLERK_SECRET_KEY=your_clerk_secret
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+POSTGRES_URL=your_postgres_connection_string
+# Optional for local blob uploads
+BLOB_READ_WRITE_TOKEN=your_vercel_blob_token
+```
+
+### Database Schema
+
+Ensure the `audits` table exists:
+
+```sql
+CREATE TABLE IF NOT EXISTS audits (
+	id SERIAL PRIMARY KEY,
+	user_id TEXT NOT NULL,
+	ui_title TEXT NOT NULL,
+	image_url TEXT,
+	framework TEXT,
+	analysis JSONB NOT NULL,
+	created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
