@@ -19,7 +19,7 @@ Heuristic.ai is a powerful, AI-driven design auditing platform that helps design
 - **Authentication**: [Clerk](https://clerk.com/)
 - **Database**: [Vercel Postgres (Neon)](https://neon.tech/)
 - **AI Engine**: meta-llama/llama-4-scout-17b-16e-instruct via [Groq](https://groq.com/)
-- **Payments**: [Razorpay](https://razorpay.com/)
+- **Payments**: [Razorpay](https://razorpay.com/) (Lemon Squeezy 🍋 coming soon!)
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **Components**: [Shadcn UI](https://ui.shadcn.com/) (select components)
 

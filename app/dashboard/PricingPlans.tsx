@@ -287,6 +287,19 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
                 ))}
             </div>
 
+            {/* Payment Roadmap */}
+            <div className="mt-8 flex justify-center items-center gap-3">
+                <div className="h-[1px] w-12 bg-border-dim"></div>
+                <p className="text-[10px] md:text-xs font-black uppercase tracking-widest text-muted-text flex items-center gap-2">
+                    <CreditCard className="w-3 h-3" />
+                    Securely processed by Razorpay
+                </p>
+                <div className="h-[1px] w-12 bg-border-dim"></div>
+                <p className="text-[10px] md:text-xs font-black uppercase tracking-widest text-accent-primary bg-accent-primary/5 px-2 py-0.5 rounded border border-accent-primary/10">
+                    🍋 Lemon Squeezy Coming Soon
+                </p>
+            </div>
+
             <div className="mt-16 text-center bg-card border border-border-dim rounded-2xl p-8 max-w-3xl mx-auto">
                 <h4 className="text-lg font-bold text-foreground mb-4">Enterprise Custom Plans</h4>
                 <p className="text-muted-text mb-6">
