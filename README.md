@@ -1,65 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Heuristic.ai ⚡️
 
-## Getting Started
+Heuristic.ai is a powerful, AI-driven design auditing platform that helps designers and developers identify UX issues and accessibility gaps in seconds. Whether you're auditing a live URL or a screenshot, Heuristic.ai provides actionable feedback based on industry-standard frameworks like Nielsen's Heuristics and WCAG 2.1.
 
-First, run the development server:
+## 🚀 Features
 
+- **AI-Powered Audits**: Get deep insights into UX, accessibility, and visual design using meta-llama/llama-4.
+- **Competitor Benchmarking**: Compare your site against competitors side-by-side with automated scoring and detailed metric breakdowns.
+- **Freemium Model**: Tiered access levels (Free, Lite, Plus, Pro, Agency) integrated seamlessly with **Razorpay**.
+- **Admin Console**: A secure, restricted dashboard for the founder to manage users, monitor usage, and revoke subscriptions.
+- **Theme Support**: Beautiful Light and Dark modes with automatic synchronization for Clerk authentication.
+- **PDF Reports**: Generate and export professional, high-contrast PDF reports for clients or stakeholders.
+- **Multi-Framework Support**: Choose between Nielsen Heuristics, WCAG 2.1, or Gestalt Principles for your audits.
+
+## 🛠 Tech Stack
+
+- **Framework**: [Next.js 15 (App Router)](https://nextjs.org/)
+- **Styling**: Tailwind CSS 4
+- **Authentication**: [Clerk](https://clerk.com/)
+- **Database**: [Vercel Postgres (Neon)](https://neon.tech/)
+- **AI Engine**: meta-llama/llama-4-scout-17b-16e-instruct via [Groq](https://groq.com/)
+- **Payments**: [Razorpay](https://razorpay.com/)
+- **Icons**: [Lucide React](https://lucide.dev/)
+- **Components**: [Shadcn UI](https://ui.shadcn.com/) (select components)
+
+## 🏁 Getting Started
+
+### 1. Clone the repository
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/YOUR_USERNAME/heuristic-ai.git
+cd heuristic-ai
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Environment Setup
-
-Create an `.env.local` file with the following variables:
-
-```
-GEMINI_API_KEY=your_gemini_key
-CLERK_SECRET_KEY=your_clerk_secret
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
-POSTGRES_URL=your_postgres_connection_string
-# Optional for local blob uploads
-BLOB_READ_WRITE_TOKEN=your_vercel_blob_token
+### 2. Install dependencies
+```bash
+npm install
 ```
 
-### Database Schema
+### 3. Environment Setup
+Create a `.env.local` file in the root directory and add the following variables:
 
-Ensure the `audits` table exists:
+```env
+# AI & LLM
+GROQ_API_KEY=your_groq_api_key
+GROQ_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
+
+# Authentication (Clerk)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_publishable_key
+CLERK_SECRET_KEY=your_secret_key
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
+
+# Database (Neon/Postgres)
+DATABASE_URL=your_postgres_url
+
+# Payments (Razorpay)
+NEXT_PUBLIC_RAZORPAY_KEY_ID=your_razorpay_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_secret
+```
+
+### 4. Database Schema
+Initialize your Postgres database with the following tables:
 
 ```sql
+-- Usage & Subscription Tracking
+CREATE TABLE IF NOT EXISTS user_usage (
+  user_id VARCHAR(255) PRIMARY KEY,
+  plan VARCHAR(20) DEFAULT 'free',
+  audits_used INTEGER DEFAULT 0,
+  period_key VARCHAR(7) NOT NULL,
+  token_limit INTEGER DEFAULT 2000,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit History
 CREATE TABLE IF NOT EXISTS audits (
-	id SERIAL PRIMARY KEY,
-	user_id TEXT NOT NULL,
-	ui_title TEXT NOT NULL,
-	image_url TEXT,
-	framework TEXT,
-	analysis JSONB NOT NULL,
-	created_at TIMESTAMPTZ DEFAULT NOW()
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  ui_title TEXT NOT NULL,
+  image_url TEXT,
+  framework TEXT,
+  analysis JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
-## Learn More
+### 5. Run the development server
+```bash
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the results.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 👮‍♂️ Admin Console
+Access the restricted admin area at `/admin`. Note that access is hardcoded to specific admin emails for security.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📄 License
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Developed with ❤️ by the Heuristic.ai Team.
