@@ -1,52 +1,58 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-   Upload, CheckCircle, AlertCircle, Loader2, Download, Lock, 
-   ChevronDown, LogOut, Zap, LayoutDashboard, Home as HomeIcon, History as HistoryIcon, 
-  Plus, X, Trash2, User, Sparkles, CreditCard, ArrowRight, ExternalLink, GitCompare, Eye
+import {
+  Upload, CheckCircle, AlertCircle, Loader2, Download, Lock,
+  ChevronDown, LogOut, Zap, LayoutDashboard, Home as HomeIcon, History as HistoryIcon,
+  Plus, X, Trash2, User, Sparkles, CreditCard, ArrowRight, ArrowLeft, ExternalLink, GitCompare, Eye, Shield
 } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { useUser, SignInButton, SignOutButton } from "@clerk/nextjs";
+import { PricingPlans } from "./PricingPlans";
+
+const ReportView = dynamic(() => import("./ReportView"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-96 flex items-center justify-center bg-card rounded-3xl border border-border-dim animate-pulse">
+      <Loader2 className="w-8 h-8 animate-spin text-accent-primary" />
+    </div>
+  )
+});
 
 // --- TYPES ---
 interface AuditItem {
   title: string;
   critique: string;
   fix: string;
-  severity: "High" | "Medium" | "Low";
+  severity: "critical" | "high" | "medium" | "low";
 }
 
 interface HistoryRecord {
   id: string;
   ui_title: string;
   date: string;
-  preview: string; // This will now be the Vercel Blob URL
-  analysis: AuditItem[];
+  preview: string;
+  analysis: any;
   framework: string;
 }
 
-interface AuditImageGroup {
-   index: number;
-   ui_title: string;
-   audit: AuditItem[];
-}
+import { ThemeToggle } from "@/components/theme-toggle";
 
-export default function Home() {
+function DashboardContent() {
   const { isSignedIn, user } = useUser();
   const searchParams = useSearchParams();
-  
+
   // --- APP STATE ---
-  const [activeTab, setActiveTab] = useState<"dashboard" | "history">("dashboard");
-  const [showSubscription, setShowSubscription] = useState(false);
-  
+  const [activeTab, setActiveTab] = useState<"dashboard" | "history" | "pricing">("dashboard");
+
   // --- USER DATA ---
-  const [isPro, setIsPro] = useState(false);
-  const [auditCount, setAuditCount] = useState(0);
+  const [plan, setPlan] = useState<"guest" | "free" | "pro">("guest");
+  const [auditsUsed, setAuditsUsed] = useState(0);
+  const [auditLimit, setAuditLimit] = useState<number | null>(2);
+  const [tokenLimit, setTokenLimit] = useState(2000);
 
   // --- AUDIT INPUTS ---
   const [files, setFiles] = useState<File[]>([]);
@@ -54,46 +60,61 @@ export default function Home() {
   const [urlInput, setUrlInput] = useState("");
   const [mode, setMode] = useState<"upload" | "url" | "crawler" | "accessibility">("upload");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  
+
   // --- AUDIT RESULTS ---
-  const [analysis, setAnalysis] = useState<AuditItem[] | null>(null);
-  const [analysisGrouped, setAnalysisGrouped] = useState<AuditImageGroup[] | null>(null);
-  const [currentUiTitle, setCurrentUiTitle] = useState("");
+  const [analysisData, setAnalysisData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const [framework, setFramework] = useState("nielsen");
+  const [frameworkMenuOpen, setFrameworkMenuOpen] = useState(false);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryRecord | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const isPro = plan === "pro";
+  const freeAuditsLeft = auditLimit === null ? Infinity : Math.max(auditLimit - auditsUsed, 0);
 
   // --- INIT DATA & PARAMS ---
   useEffect(() => {
-    // 0. Check Params for Crawler Mode
     const modeParam = searchParams.get("mode");
-    if (modeParam === "crawler") setMode("crawler");
+    if (modeParam === "crawler") setMode("url"); // Unified Crawler
     if (modeParam === "accessibility") setMode("accessibility");
 
-    // 2. Load User Limits (Mock DB for Subscriptions)
-    if (isSignedIn && user) {
-        const count = localStorage.getItem(`audit_count_${user.id}`);
-        const proStatus = localStorage.getItem(`is_pro_${user.id}`);
-        setAuditCount(count ? parseInt(count) : 0);
-        setIsPro(proStatus === "true");
+    async function fetchUsage() {
+      if (!isSignedIn) {
+        setPlan("guest");
+        setAuditsUsed(0);
+        setAuditLimit(2);
+        setTokenLimit(2000);
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/usage");
+        const data = await res.json();
+        setPlan(data.plan === "pro" ? "pro" : data.plan === "free" ? "free" : "guest");
+        setAuditsUsed(typeof data.audits_used === "number" ? data.audits_used : 0);
+        setAuditLimit(data.limit === null || data.limit === undefined ? null : data.limit);
+        setTokenLimit(data.token_limit || 2000);
+      } catch (err) {
+        console.error("Failed to load usage", err);
+      }
     }
 
-    // 3. FETCH REAL HISTORY FROM CLOUD DB
     async function fetchCloudHistory() {
       if (!isSignedIn) return;
       try {
         const res = await fetch("/api/history");
         const data = await res.json();
-        
+
         if (data.history) {
-          // Transform Postgres Data -> Frontend Shape
           const formattedHistory: HistoryRecord[] = data.history.map((record: any) => ({
-             id: record.id.toString(),
-             ui_title: record.ui_title || "Untitled Scan",
-             date: new Date(record.created_at).toLocaleDateString(),
-             preview: record.image_url, // Vercel Blob URL
-             analysis: record.analysis,
-             framework: record.framework
+            id: record.id.toString(),
+            ui_title: record.ui_title || "Untitled Scan",
+            date: new Date(record.created_at).toLocaleDateString(),
+            preview: record.image_url,
+            analysis: record.analysis,
+            framework: record.framework
           }));
           setHistory(formattedHistory);
         }
@@ -102,27 +123,106 @@ export default function Home() {
       }
     }
 
-    fetchCloudHistory();
-  }, [isSignedIn, user]);
+    Promise.all([fetchUsage(), fetchCloudHistory()]);
+  }, [isSignedIn, user, searchParams]);
 
 
-  // --- HANDLERS ---
-  const handleUpgrade = () => {
-    setLoading(true);
-    setTimeout(() => {
-        setIsPro(true);
-        localStorage.setItem(`is_pro_${user?.id}`, "true");
-        setLoading(false);
-        setShowSubscription(false);
-        alert("Welcome to Pro! You now have unlimited access.");
-    }, 1500);
+  const handleUpgrade = (planId: string) => {
+    // Ideally fetch fresh usage from server, but for speed we optimistic update
+    setPlan(planId as any);
+
+    let newAuditLimit: number | null = 2;
+    let newTokenLimit = 2000;
+
+    if (planId === "pro") {
+      newAuditLimit = null;
+      newTokenLimit = 4000;
+    } else if (planId === "agency") {
+      newAuditLimit = null;
+      newTokenLimit = 8000;
+    } else if (planId === "plus") {
+      newAuditLimit = 12;
+      newTokenLimit = 3000;
+    } else if (planId === "lite") {
+      newAuditLimit = 5;
+      newTokenLimit = 2500;
+    }
+
+    setAuditLimit(newAuditLimit);
+    setTokenLimit(newTokenLimit);
+    setAuditsUsed(0);
+    setActiveTab("dashboard");
+    alert(`${planId.charAt(0).toUpperCase() + planId.slice(1)} plan activated!`);
   };
 
-  const deleteHistoryItem = (id: string, e: React.MouseEvent) => {
+  const deleteHistoryItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    // Note: In a real app, you'd send a DELETE request to API here
-    const updated = history.filter(h => h.id !== id);
-    setHistory(updated);
+
+    if (!window.confirm("Are you sure you want to delete this audit? This action cannot be undone.")) {
+      return;
+    }
+
+    // Optimistic UI update
+    const originalHistory = [...history];
+    setHistory(history.filter(h => h.id !== id));
+
+    // Clear selection if it was selected
+    const newSelected = new Set(selectedIds);
+    newSelected.delete(id);
+    setSelectedIds(newSelected);
+
+    try {
+      const res = await fetch(`/api/history?id=${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+    } catch (err) {
+      console.error(err);
+      alert("Error deleting item. Please try again.");
+      setHistory(originalHistory); // Rollback
+    }
+  };
+
+  const deleteSelectedAudits = async () => {
+    if (selectedIds.size === 0) return;
+
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.size} selected audits? This action cannot be undone.`)) {
+      return;
+    }
+
+    const idsToDelete = Array.from(selectedIds);
+    const originalHistory = [...history];
+
+    // Optimistic UI update
+    setHistory(history.filter(h => !selectedIds.has(h.id)));
+    setSelectedIds(new Set());
+
+    try {
+      const res = await fetch(`/api/history?id=${idsToDelete.join(",")}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete selected");
+      alert(`${idsToDelete.length} audits deleted successfully.`);
+    } catch (err) {
+      console.error(err);
+      alert("Error deleting audits. Please try again.");
+      setHistory(originalHistory); // Rollback
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === history.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(history.map(h => h.id)));
+    }
+  };
+
+  const toggleSelectId = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
   };
 
   // --- PASTE LISTENER ---
@@ -157,49 +257,63 @@ export default function Home() {
     if (mode === "upload" && files.length === 0) return;
     if ((mode === "url" || mode === "crawler" || mode === "accessibility") && !urlInput) return;
 
-    // Subscription Gate
-    if (isSignedIn && !isPro && auditCount >= 2) {
-        setShowSubscription(true);
-        return;
+    const reachedLimit = plan !== "pro" && auditLimit !== null && auditsUsed >= auditLimit;
+    if (reachedLimit) {
+      setActiveTab("pricing");
+      return;
     }
 
     setLoading(true);
-   setAnalysis(null);
-   setAnalysisGrouped(null);
-    setCurrentUiTitle("");
+    setAnalysisData(null);
 
     const formData = new FormData();
     formData.append("framework", framework);
-    formData.append("mode", mode);
-    if (mode === "url" || mode === "crawler" || mode === "accessibility") formData.append("url", urlInput);
-    else files.forEach((file) => formData.append("file", file));
+
+    // UNIFIED: If user selected "url", send "crawler" to API for deep scan
+    if (mode === "url") {
+      formData.append("mode", "crawler");
+      formData.append("url", urlInput);
+    } else {
+      formData.append("mode", mode);
+      if (mode === "accessibility") formData.append("url", urlInput);
+      else files.forEach((file) => formData.append("file", file));
+    }
 
     try {
-         const res = await fetch("/api/audit", { method: "POST", body: formData });
+      const res = await fetch("/api/audit", { method: "POST", body: formData });
+      if (res.status === 402) {
+        setActiveTab("pricing");
+        return;
+      }
+
       const data = await res.json();
-      
-      if (data.audit) {
-        setAnalysis(data.audit);
-            if (data.analysis_grouped) setAnalysisGrouped(data.analysis_grouped);
-        setCurrentUiTitle(data.ui_title);
-        
+      if (!res.ok) {
+        throw new Error(data.error || "Request failed");
+      }
+
+      if (data.audit || data.score !== undefined) {
+        setAnalysisData(data); // STORE FULL DATA
+
         // Update Local Limits
+        if (data.limits) {
+          setPlan(data.limits.plan === "pro" ? "pro" : data.limits.plan === "free" ? "free" : "guest");
+          if (typeof data.limits.audits_used === "number") setAuditsUsed(data.limits.audits_used);
+          setAuditLimit(data.limits.limit === null || data.limits.limit === undefined ? null : data.limits.limit);
+          if (data.limits.token_limit) setTokenLimit(data.limits.token_limit);
+        } else if (isSignedIn) {
+          setAuditsUsed((prev) => prev + 1);
+        }
+
         if (isSignedIn) {
-            const newCount = auditCount + 1;
-            setAuditCount(newCount);
-            localStorage.setItem(`audit_count_${user?.id}`, newCount.toString());
-            
-            // UPDATE HISTORY STATE INSTANTLY (With Cloud URL)
-            // The API returns 'image_url' which is the Vercel Blob link
-            const newRecord: HistoryRecord = {
-                id: Date.now().toString(), // Temp ID until refresh
-                ui_title: data.ui_title,
-                date: new Date().toLocaleDateString(),
-                preview: data.image_url, 
-                analysis: data.audit,
-                framework: framework
-            };
-            setHistory([newRecord, ...history]);
+          const newRecord: HistoryRecord = {
+            id: data.id || Date.now().toString(),
+            ui_title: data.ui_title,
+            date: new Date().toLocaleDateString(),
+            preview: data.image_url,
+            analysis: data, // Store full object
+            framework: framework
+          };
+          setHistory([newRecord, ...history]);
         }
       } else if (data.error) {
         alert(data.error);
@@ -212,224 +326,263 @@ export default function Home() {
     }
   }
 
-  // --- PDF ENGINE (OFFICIAL) ---
-   const generatePDF = (data = analysis, title = currentUiTitle, allPreviews: string[] = previews) => {
-      if (!data) return;
-    const doc = new jsPDF();
-    const width = doc.internal.pageSize.getWidth();
-    const height = doc.internal.pageSize.getHeight();
+  // --- PDF ENGINE (HYBRID) ---
+  const handleExportPDF = async () => {
+    if (!analysisData) return;
 
-    // Brand Colors (Indigo-500)
-    const BRAND_COLOR = [99, 102, 241]; // #6366f1
-    const DARK_BG = [10, 10, 10];      // #0a0a0a
+    setPdfGenerating(true);
+    try {
+      // Dynamic imports
+      const jsPDF = (await import("jspdf")).default;
+      const { toPng } = await import("html-to-image"); // Re-import for chart capture
 
-    // --- COVER PAGE ---
-    // Full Dark Background
-    doc.setFillColor(DARK_BG[0], DARK_BG[1], DARK_BG[2]); 
-    doc.rect(0, 0, width, height, "F");
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
 
-    // Decorative Accent Line (Top)
-    doc.setFillColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
-    doc.rect(0, 0, width, 2, "F");
+      // COLORS (Forced Light Mode)
+      const BG = { r: 255, g: 255, b: 255 };
+      const CARD = { r: 248, g: 250, b: 252 };
+      const STROKE = { r: 226, g: 232, b: 240 };
+      const TEXT_MAIN = { r: 2, g: 6, b: 23 };
+      const TEXT_MUTED = { r: 100, g: 116, b: 139 };
+      const ACCENT = { r: 79, g: 70, b: 229 }; // Indigo-600
 
-    // "Heuristic.ai" Branding
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(40);
-    doc.setTextColor(255, 255, 255);
-    doc.text("Heuristic", 20, 50);
-    doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
-    doc.text(".ai", 20 + doc.getTextWidth("Heuristic"), 50);
+      // HELPER: Draw rounded rect
+      const roundedRect = (x: number, y: number, w: number, h: number, r: number = 3) => {
+        doc.roundedRect(x, y, w, h, r, r, "F");
+        doc.setDrawColor(STROKE.r, STROKE.g, STROKE.b);
+        doc.setLineWidth(0.1);
+        doc.roundedRect(x, y, w, h, r, r, "S");
+      };
 
-    // Subtitle
-    doc.setFontSize(14);
-    doc.setTextColor(150, 150, 150); 
-    doc.setFont("helvetica", "normal");
-    doc.text("INTELLIGENT UX AUDIT REPORT", 20, 60);
+      // --- PAGE 1: DASHBOARD ---
 
-    // Document Title
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(28);
-    doc.setFont("times", "normal"); // Serif for content title looks classy
-    const splitTitle = doc.splitTextToSize(title || "Untitled Scan", width - 40);
-    doc.text(splitTitle, 20, 100);
-    
-    // Metadata
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
-    doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
-    doc.text(`Framework: ${framework.toUpperCase()}`, 20, 125);
-    doc.setTextColor(100, 100, 100);
-    doc.text(`Generated on ${new Date().toLocaleDateString()}`, 20, 132);
+      // Background
+      doc.setFillColor(BG.r, BG.g, BG.b);
+      doc.rect(0, 0, pageWidth, pageHeight, "F");
 
-      // Embed primary visual
+      // Header
+      // Logo
       try {
-            const first = allPreviews && allPreviews.length > 0 ? allPreviews[0] : undefined;
-            if (first) {
-                  const imgProps = doc.getImageProperties(first);
-                  // Fit within a box
-                  const maxW = width - 40;
-                  const maxH = 120;
-                  const scale = Math.min(maxW / imgProps.width, maxH / imgProps.height);
-                  const w = imgProps.width * scale;
-                  const h = imgProps.height * scale;
-                  
-                  // Image Border
-                  doc.setDrawColor(40, 40, 40);
-                  doc.rect((width - w)/2 - 1, 150 - 1, w + 2, h + 2);
-                  doc.addImage(first, "JPEG", (width - w)/2, 150, w, h);
-            }
-      } catch (e) {}
+        const logoUrl = window.location.origin + "/heuristic-logo.png";
+        const logoImg = new Image();
+        logoImg.src = logoUrl;
+        await new Promise((resolve) => {
+          logoImg.onload = resolve;
+          logoImg.onerror = resolve;
+        });
+        doc.addImage(logoImg, "PNG", 15, 15, 12, 12);
 
-    // Footer
-    doc.setFontSize(10);
-    doc.setTextColor(80, 80, 80);
-    doc.text("heuristic.ai | Automated UX Intelligence", 20, height - 20);
-
-    // --- REPORT CONTENT ---
-    doc.addPage();
-    
-    // Header for internal pages
-    const drawHeader = (doc: any) => {
-        doc.setFillColor(250, 250, 250);
-        doc.rect(0, 0, width, 25, "F");
-        doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 0, 0);
-        doc.text("Detailed Findings", 15, 17);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(150, 150, 150);
-        doc.text("Heuristic.ai", width - 40, 17);
-        doc.setDrawColor(230, 230, 230);
-        doc.line(0, 25, width, 25);
-    };
-
-    drawHeader(doc);
-
-      const tableBody = data.map((item, i) => [
-      `#${i+1}`,
-      `${item.title || "Issue"}\nSeverity: ${item.severity ? item.severity.toUpperCase() : 'MEDIUM'}`,
-      `OBSERVATION:\n${item.issue || item.critique}\n\nRECOMMENDATION:\n${item.solution || item.fix}`
-    ]);
-
-    autoTable(doc, {
-      startY: 35,
-      head: [["ID", "Heuristic Violation", "Analysis & Recommendation"]],
-      body: tableBody,
-      theme: 'grid',
-      headStyles: { 
-          fillColor: [10, 10, 10], // Black header
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          lineWidth: 0
-      },
-      columnStyles: { 
-          0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' }, 
-          1: { cellWidth: 50, fontStyle: 'bold' } 
-      },
-      styles: {
-          fontSize: 10,
-          cellPadding: 5,
-          lineColor: [230, 230, 230],
-          lineWidth: 0.1,
-          textColor: [40, 40, 40]
-      },
-      alternateRowStyles: {
-          fillColor: [250, 250, 250]
-      },
-      didDrawPage: function (data) {
-          // Don't draw header on first content page (we did it manually above)
-          if (data.pageNumber > 2) { 
-             drawHeader(doc);
-          }
-      },
-      margin: { top: 30 }
-    });
-    
-    doc.save(`${title ? title.replace(/ /g, "_") : "Audit"}_Report.pdf`);
-    
-      // Gallery with annotations (same style upgrade)
-      if (allPreviews && allPreviews.length > 0) {
-         allPreviews.forEach((src, idx) => {
-            doc.addPage();
-            drawHeader(doc); // Use same header
-
-            doc.setTextColor(0, 0, 0);
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(16);
-            const groupTitle = analysisGrouped?.find(g => g.index === idx)?.ui_title || `Screenshot ${idx + 1}`;
-            doc.text(groupTitle, 15, 45);
-
-            try {
-               const props = doc.getImageProperties(src);
-               const maxW = width - 30;
-               const scaledH = (props.height * maxW) / props.width;
-               const y = 55;
-               doc.addImage(src, "JPEG", 15, y, maxW, Math.min(scaledH, height - 120));
-               
-               // Image Analysis Table
-               // If there is space below image (let's say > 30% of page left), put it there. Otherwise new page.
-               const endY = y + Math.min(scaledH, height - 120) + 10;
-               const spaceLeft = height - endY;
-               
-               let startYTable = endY;
-               if (spaceLeft < 100) { 
-                  doc.addPage();
-                  drawHeader(doc);
-                  startYTable = 40;
-               }
-
-               const groupItems = analysisGrouped?.find(g => g.index === idx)?.audit || [];
-               if (groupItems.length > 0) {
-                   // BACKWARD COMPATIBILITY: Similar mapping as route.js to ensure fields exist
-                   const mappedItems = groupItems.map((item: any) => ({
-                      title: item.title || item.issue?.substring(0, 50) + "..." || "Issue Detected",
-                      issue: item.issue || item.critique || "N/A",
-                      solution: item.solution || item.fix || "N/A",
-                      severity: item.severity || "medium"
-                   }));
-
-                   const annBody = mappedItems.map((item, i) => [
-                      `#${i + 1}`,
-                      `${item.title}\nSeverity: ${item.severity ? item.severity.toUpperCase() : 'MEDIUM'}`,
-                      `OBSERVATION:\n${item.issue}\n\nRECOMMENDATION:\n${item.solution}`
-                   ]);
-
-                   autoTable(doc, {
-                      startY: startYTable,
-                      head: [["ID", "Finding", "Analysis"]],
-                      body: annBody,
-                      theme: 'grid',
-                      headStyles: { 
-                        fillColor: [10, 10, 10], 
-                        textColor: [255, 255, 255],
-                        fontStyle: 'bold',
-                        lineWidth: 0
-                      },
-                      columnStyles: { 
-                        0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' }, 
-                        1: { cellWidth: 50, fontStyle: 'bold' } 
-                      },
-                      styles: {
-                        fontSize: 9,
-                        cellPadding: 4,
-                        lineColor: [230, 230, 230],
-                        lineWidth: 0.1,
-                        textColor: [40, 40, 40]
-                      },
-                      alternateRowStyles: { fillColor: [250, 250, 250] },
-                      margin: { top: 30 },
-                      didDrawPage: function (data) {
-                        if (data.pageNumber > (doc as any).internal.pages.length) { 
-                           drawHeader(doc);
-                        }
-                      },
-                   });
-               }
-
-            } catch (e) {}
-         });
+        doc.setFontSize(22);
+        doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+        doc.text("Heuristic.ai", 32, 24);
+      } catch (e) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+        doc.text("Heuristic.ai", 15, 24);
       }
+
+      // Title
+      doc.setFontSize(16);
+      doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+      doc.text(analysisData.ui_title || "Ui UX Audit Report", 15, 50); // Moved from 32 to 50
+
+      doc.setFontSize(10);
+      doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+      doc.text(`Framework: ${framework === 'nielsen' ? "Nielsen's Heuristics" : "Custom"}`, 15, 58); // From 40 to 58
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 63); // From 45 to 63
+
+      // Score Card (Top Right)
+      const score = Math.round(analysisData.score || 0);
+      const scoreColor = score >= 80 ? [16, 185, 129] : score >= 60 ? [245, 158, 11] : [239, 68, 68];
+
+      doc.setFillColor(CARD.r, CARD.g, CARD.b);
+      doc.setDrawColor(scoreColor[0], scoreColor[1], scoreColor[2]);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(pageWidth - 55, 15, 40, 30, 3, 3, "FD");
+
+      doc.setFontSize(8);
+      doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+      doc.text("UX SCORE", pageWidth - 35, 22, { align: "center" });
+
+      doc.setFontSize(24);
+      doc.setTextColor(scoreColor[0], scoreColor[1], scoreColor[2]);
+      doc.text(score.toString(), pageWidth - 35, 33, { align: "center" });
+
+      doc.setFontSize(6);
+      doc.setTextColor(150, 150, 150);
+      doc.text("OUT OF 100", pageWidth - 35, 39, { align: "center" });
+
+
+      // --- HYBRID CONTENT: RADAR CHART ---
+      // We assume the chart exists in the DOM. We capture it as an image.
+      const chartEl = document.getElementById("radar-chart-container");
+      if (chartEl) {
+        try {
+          // Wait a bit for render
+          await new Promise(r => setTimeout(r, 200));
+          const chartDataUrl = await toPng(chartEl, { backgroundColor: '#F8FAFC' });
+
+          // Draw Chart Card Background
+          doc.setFillColor(CARD.r, CARD.g, CARD.b);
+          roundedRect(15, 80, 90, 80); // Moved from 60 to 80
+
+          // Title
+          doc.setFontSize(12);
+          doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+          doc.text("Performance Metrics", 20, 90);
+
+          // Embed Image
+          doc.addImage(chartDataUrl, 'PNG', 18, 95, 84, 60);
+
+        } catch (e) {
+          console.error("Chart capture failed", e);
+          // Fallback text
+          doc.setTextColor(220, 38, 38);
+          doc.text("Chart unavailable", 20, 90);
+        }
+      }
+
+      // --- STRENGTHS & WEAKNESSES (Right Side) ---
+      const rightColX = 115;
+
+      // Strengths Card
+      doc.setFillColor(CARD.r, CARD.g, CARD.b);
+      roundedRect(rightColX, 80, 80, 38); // Moved from 60 to 80
+
+      doc.setFontSize(12);
+      doc.setFontSize(12);
+      doc.setTextColor(16, 185, 129); // Emerald
+      doc.text("Key Strengths", rightColX + 5, 90); // Moved from 70 to 90
+
+      doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+      doc.setFontSize(9);
+      let sY = 98; // Moved from 78 to 98
+      (analysisData.key_strengths || []).slice(0, 3).forEach((s: string) => {
+        doc.text(`• ${s.substring(0, 45)}${s.length > 45 ? '...' : ''}`, rightColX + 5, sY);
+        sY += 6;
+      });
+
+      // Weaknesses Card
+      doc.setFillColor(CARD.r, CARD.g, CARD.b);
+      roundedRect(rightColX, 122, 80, 38); // Moved from 102 to 122
+
+      doc.setFontSize(12);
+      doc.setTextColor(239, 68, 68); // Red
+      doc.text("Areas for Improvement", rightColX + 5, 132); // Moved from 112 to 132
+
+      doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+      doc.setFontSize(9);
+      let wY = 140; // Moved from 120 to 140
+      (analysisData.key_weaknesses || []).slice(0, 3).forEach((w: string) => {
+        doc.text(`• ${w.substring(0, 45)}${w.length > 45 ? '...' : ''}`, rightColX + 5, wY);
+        wY += 6;
+      });
+
+
+      // --- DETAILED FINDINGS (Cards List) ---
+      doc.setFontSize(14);
+      doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+      doc.text("Detailed Findings", 15, 175); // Moved from 155 to 175
+
+      let cursorY = 185; // Moved from 165 to 185
+
+      (analysisData.audit || []).forEach((item: any, idx: number) => {
+        // 1. Calculate Text Dimensions
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        const titleLines = doc.splitTextToSize(item.title || "Issue", pageWidth - 70);
+        const titleHeight = titleLines.length * 5;
+
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        const descLines = doc.splitTextToSize(item.issue || "No description", pageWidth - 50);
+        const descHeight = descLines.length * 4;
+
+        const solLines = doc.splitTextToSize(item.solution || "No suggestion", pageWidth - 70);
+        const solHeight = solLines.length * 4;
+
+        // Padding & Spacing
+        // Top: 10, Gap: 8, Gap: 10, Bottom: 10
+        const cardHeight = 10 + titleHeight + 8 + descHeight + 10 + solHeight + 10;
+
+        // 2. Check Page Break
+        if (cursorY + cardHeight > pageHeight - 20) {
+          doc.addPage();
+          doc.setFillColor(BG.r, BG.g, BG.b);
+          doc.rect(0, 0, pageWidth, pageHeight, "F");
+          cursorY = 20;
+        }
+
+        // 3. Card Background
+        doc.setFillColor(CARD.r, CARD.g, CARD.b);
+        roundedRect(15, cursorY, pageWidth - 30, cardHeight);
+
+        // 4. Content
+        let contentY = cursorY + 10;
+
+        // Number
+        doc.setFontSize(10);
+        doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+        doc.text(`#${idx + 1}`, 20, contentY);
+
+        // Title
+        doc.setFontSize(11);
+        doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+        doc.setFont("helvetica", "bold");
+        doc.text(titleLines, 30, contentY); // Title (array of lines)
+
+        // Severity Pill
+        const sev = (item.severity || "LOW").toUpperCase();
+        const sevColor = sev === "CRITICAL" ? [239, 68, 68] : sev === "HIGH" ? [245, 158, 11] : [59, 130, 246];
+        doc.setFillColor(sevColor[0], sevColor[1], sevColor[2]);
+        doc.roundedRect(pageWidth - 35, cursorY + 5, 15, 5, 1, 1, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(6);
+        doc.text(sev, pageWidth - 27.5, cursorY + 8.5, { align: "center" });
+
+        contentY += titleHeight + 8;
+
+        // Description
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+        doc.text(descLines, 30, contentY);
+
+        contentY += descHeight + 10;
+
+        // Recommendation (Lightbulb)
+        doc.setTextColor(202, 138, 4); // Darker yellow for accessibility
+        doc.text("Suggestion:", 30, contentY);
+        doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+        // Indent suggestion text
+        doc.text(solLines, 52, contentY);
+
+        cursorY += cardHeight + 5;
+      });
+
+      // Branding Footer
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text("Generative AI Audit by Heuristic.ai", pageWidth - 15, pageHeight - 5, { align: "right" });
+      }
+
+      doc.save(`Heuristic_Audit_Report.pdf`);
+
+    } catch (err: any) {
+      console.error("PDF Fail:", err);
+      alert("Failed to generate PDF. check console.");
+    } finally {
+      setPdfGenerating(false);
+    }
   };
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -445,305 +598,431 @@ export default function Home() {
   };
 
 
-
-
-  // ==========================
-  // VIEW: DASHBOARD
-  // ==========================
   return (
-   <div className="min-h-screen bg-[#09090b] text-slate-200 font-sans overflow-hidden">
-      
+    <div className="min-h-screen bg-background text-foreground font-sans overflow-hidden transition-colors duration-500">
+
       {/* IMAGE PREVIEW MODAL */}
       <AnimatePresence>
         {selectedImage && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }} 
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={() => setSelectedImage(null)}
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-8 backdrop-blur-sm cursor-zoom-out"
+            className="fixed inset-0 z-50 bg-background/90 flex items-center justify-center p-8 backdrop-blur-sm cursor-zoom-out"
           >
-             <motion.img 
-               initial={{ scale: 0.9 }} 
-               animate={{ scale: 1 }} 
-               exit={{ scale: 0.9 }} 
-               src={selectedImage} 
-               className="max-w-full max-h-full rounded-lg shadow-2xl border border-white/10" 
-             />
-             <button className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors">
-               <X className="w-8 h-8" />
-             </button>
+            <motion.img
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              src={selectedImage}
+              className="max-w-full max-h-full rounded-lg shadow-2xl border border-border-dim"
+            />
+            <button className="absolute top-6 right-6 text-foreground/50 hover:text-foreground transition-colors">
+              <X className="w-8 h-8" />
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* SIDEBAR */}
-      <aside className="fixed left-0 top-0 h-screen w-72 border-r border-white/5 bg-[#0c0c0e] hidden md:flex flex-col">
+      {/* MOBILE NAVIGATION BAR */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-card/80 backdrop-blur-lg border-t border-border-dim px-6 py-3 flex justify-around items-center md:hidden">
+        <button
+          onClick={() => setActiveTab("dashboard")}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'text-muted-text'}`}
+        >
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[10px] font-bold">New Audit</span>
+        </button>
+        <ThemeToggle />
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-accent-primary shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'text-muted-text'}`}
+        >
+          <HistoryIcon className="w-5 h-5" />
+          <span className="text-[10px] font-bold">History</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("pricing")}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'pricing' ? 'text-accent-primary shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'text-muted-text'}`}
+        >
+          <CreditCard className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Pricing</span>
+        </button>
+      </nav>
+
+      {/* SIDEBAR (Desktop only) */}
+      <aside className="fixed left-0 top-0 h-screen w-72 border-r border-border-dim bg-card hidden md:flex flex-col">
         <div className="p-6">
-           <div className="flex items-center gap-3 mb-10">
-             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><Zap className="w-5 h-5 text-white" /></div>
-             <span className="text-xl font-bold text-white tracking-tight">Heuristic<span className="text-indigo-400">.ai</span></span>
-           </div>
-           <nav className="space-y-2">
-                  <Link href="/" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium text-slate-500 hover:text-white hover:bg-white/5">
-                     <HomeIcon className="w-5 h-5" /> Home
-                  </Link>
-             <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === 'dashboard' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
-               <LayoutDashboard className="w-5 h-5" /> New Audit
-             </button>
-             <Link href="/compare" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium text-slate-500 hover:text-white hover:bg-white/5">
-               <GitCompare className="w-5 h-5" /> Competitor Compare
-             </Link>
-             <button onClick={() => setActiveTab("history")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === 'history' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
-               <HistoryIcon className="w-5 h-5" /> History
-             </button>
-           </nav>
+          <div className="flex items-center justify-between mb-10">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><Zap className="w-5 h-5 text-white" /></div>
+              <span className="text-xl font-bold text-foreground tracking-tight">Heuristic<span className="text-indigo-500 dark:text-indigo-400">.ai</span></span>
+            </div>
+            <ThemeToggle />
+          </div>
+          <nav className="space-y-2">
+            <Link href="/" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium text-muted-text hover:text-foreground hover:bg-foreground/5">
+              <HomeIcon className="w-5 h-5" /> Home
+            </Link>
+            <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === 'dashboard' ? 'bg-indigo-600/10 text-indigo-500 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'text-muted-text hover:text-foreground hover:bg-foreground/5'}`}>
+              <LayoutDashboard className="w-5 h-5" /> New Audit
+            </button>
+            <Link href="/compare" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium text-muted-text hover:text-foreground hover:bg-foreground/5">
+              <GitCompare className="w-5 h-5" /> Competitor Compare
+            </Link>
+            <button onClick={() => setActiveTab("history")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === 'history' ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'text-muted-text hover:text-foreground hover:bg-foreground/5'}`}>
+              <HistoryIcon className="w-5 h-5" /> History
+            </button>
+            <button onClick={() => setActiveTab("pricing")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === 'pricing' ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'text-muted-text hover:text-foreground hover:bg-foreground/5'}`}>
+              <CreditCard className="w-5 h-5" /> Pricing
+            </button>
+            {user?.emailAddresses?.[0]?.emailAddress === "devkulshrestha27@gmail.com" && (
+              <a href="/admin" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium text-muted-text hover:text-red-400 hover:bg-red-500/10 mt-6 border border-transparent hover:border-red-500/20">
+                <Shield className="w-5 h-5" /> Admin Console
+              </a>
+            )}
+          </nav>
         </div>
-        <div className="mt-auto p-6 border-t border-white/5">
-           {!isSignedIn ? (
-              <div className="bg-[#151518] p-4 rounded-xl border border-white/5 text-center">
-                 <p className="text-xs text-slate-400 mb-3">Sign in to save history</p>
-                 <SignInButton mode="modal"><button className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white font-bold text-xs">Sign In</button></SignInButton>
+        <div className="mt-auto p-6 border-t border-border-dim">
+          {!isSignedIn ? (
+            <div className="bg-foreground/[0.03] p-4 rounded-xl border border-border-dim text-center">
+              <p className="text-xs text-muted-text mb-3">Sign in to save history</p>
+              <SignInButton mode="modal"><button className="w-full py-2 bg-accent-primary hover:opacity-90 rounded-lg text-white font-bold text-xs shadow-md shadow-accent-primary/20">Sign In</button></SignInButton>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 bg-foreground/[0.03] p-3 rounded-xl border border-border-dim">
+              {user.imageUrl ? (
+                <img src={user.imageUrl} alt={user.fullName || "User"} className="w-10 h-10 rounded-full border border-border-dim shadow-lg object-cover" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-primary to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">{user.firstName?.charAt(0)}</div>
+              )}
+              <div className="flex-1 overflow-hidden">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-bold text-foreground truncate">{user.firstName}</p>
+                  {isPro && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold">PRO</span>}
+                </div>
+                <p className="text-xs text-muted-text truncate">{isPro ? "Unlimited Access" : `${freeAuditsLeft} Free Audits Left`}</p>
               </div>
-           ) : (
-              <div className="flex items-center gap-3 bg-[#151518] p-3 rounded-xl border border-white/5">
-                 {user.imageUrl ? (
-                     <img src={user.imageUrl} alt={user.fullName || "User"} className="w-10 h-10 rounded-full border border-white/10 shadow-lg object-cover" />
-                 ) : (
-                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">{user.firstName?.charAt(0)}</div>
-                 )}
-                 <div className="flex-1 overflow-hidden">
-                    <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-white truncate">{user.firstName}</p>
-                        {isPro && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold">PRO</span>}
-                    </div>
-                    <p className="text-xs text-slate-500 truncate">{isPro ? "Unlimited Access" : `${2 - auditCount} Free Audits Left`}</p>
-                 </div>
-                 <SignOutButton><button className="text-slate-500 hover:text-red-400 transition-colors"><LogOut className="w-4 h-4" /></button></SignOutButton>
-              </div>
-           )}
+              <SignOutButton><button className="text-muted-text hover:text-red-500 transition-colors"><LogOut className="w-4 h-4" /></button></SignOutButton>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto relative md:ml-72">
+      <main className="flex-1 overflow-y-auto relative md:ml-72 pb-24 md:pb-0">
         <div className="max-w-5xl mx-auto px-6 py-12">
-          
+
           {/* --- TAB 1: NEW AUDIT --- */}
           {activeTab === "dashboard" && (
             <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}>
-               <div className="flex justify-between items-end mb-12">
-                 <div>
-                   <h1 className="text-3xl font-bold text-white mb-2">{isSignedIn ? `Welcome back, ${user.firstName}` : "Design Audit Dashboard"}</h1>
-                   <p className="text-slate-400">Upload your UI to get expert feedback instantly.</p>
-                 </div>
-                 {!isPro && isSignedIn && (
-                    <button onClick={() => setShowSubscription(true)} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs rounded-full shadow-lg shadow-orange-500/20 hover:scale-105 transition-transform"><Sparkles className="w-4 h-4" /> Upgrade to Pro</button>
-                 )}
-               </div>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">{isSignedIn ? `Welcome back, ${user.firstName}` : "Design Audit Dashboard"}</h1>
+                  <p className="text-muted-text text-sm md:text-base">Upload your UI to get expert feedback instantly.</p>
+                </div>
+                {!isPro && isSignedIn && (
+                  <button onClick={() => setActiveTab("pricing")} className="group flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs rounded-full shadow-lg shadow-orange-500/20 hover:scale-110 hover:shadow-xl hover:shadow-orange-500/30 transition-all duration-300"><Sparkles className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" /> Upgrade to Pro</button>
+                )}
+              </div>
 
-               {/* TOOL BOX */}
-               <div className="bg-[#121214] border border-white/5 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
-                 
-                 <div className="flex justify-center mb-8">
-                    <div className="bg-black/40 p-1.5 rounded-xl flex gap-1 border border-white/5">
-                       <button onClick={() => setMode("upload")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'upload' ? 'bg-[#1F1F23] text-white shadow-md' : 'text-slate-500 hover:text-white'}`}>Upload Images</button>
-                       <button onClick={() => setMode("url")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'url' ? 'bg-[#1F1F23] text-white shadow-md' : 'text-slate-500 hover:text-white'}`}>Website URL</button>
-                       <button onClick={() => setMode("crawler")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'crawler' ? 'bg-[#1F1F23] text-white shadow-md' : 'text-slate-500 hover:text-white'}`}>Site Crawler</button>
-                    </div>
-                 </div>
-                 
-                 {mode === "accessibility" && (
-                    <div className="flex justify-center -mt-6 mb-8">
-                       <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 animate-in fade-in slide-in-from-top-2">
-                          <Eye className="w-3 h-3" /> Accessibility Mode Active
-                       </span>
-                    </div>
-                 )}
+              {/* TOOL BOX */}
+              <div className="bg-card border border-border-dim rounded-3xl p-8 shadow-2xl relative mb-12 hover:border-accent-primary/20 transition-all duration-300">
 
-                 <div className="min-h-[200px] flex flex-col justify-center">
-                   {mode === "upload" ? (
-                       previews.length > 0 ? (
-                          <div className="grid grid-cols-4 gap-4">
-                             {previews.map((src, i) => (
-                               <div key={i} className="relative group">
-                                 <img 
-                                   src={src} 
-                                   onClick={() => setSelectedImage(src)}
-                                   className="rounded-xl border border-white/10 w-full h-32 object-cover cursor-zoom-in hover:opacity-90 transition-opacity" 
-                                 />
-                                 <button 
-                                   onClick={() => removeImage(i)}
-                                   className="absolute top-2 right-2 bg-black/60 hover:bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm transform hover:scale-110"
-                                 >
-                                   <X className="w-4 h-4" />
-                                 </button>
-                               </div>
-                             ))}
-                             <label className="border border-dashed border-white/10 rounded-xl flex items-center justify-center cursor-pointer hover:bg-white/5 min-h-[128px] transition-colors">
-                               <Plus className="w-6 h-6 text-slate-500" />
-                               <input type="file" multiple onChange={handleFileChange} className="hidden" />
-                             </label>
+                <div className="flex justify-center mb-8">
+                  <div className="bg-foreground/5 p-1.5 rounded-xl flex gap-1 border border-border-dim">
+                    <button onClick={() => setMode("upload")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all duration-300 ${mode === 'upload' ? 'bg-background text-foreground shadow-md scale-105' : 'text-muted-text hover:text-foreground hover:bg-foreground/5'}`}>Upload Images</button>
+                    <button onClick={() => setMode("url")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all duration-300 ${mode === 'url' ? 'bg-background text-foreground shadow-md scale-105' : 'text-muted-text hover:text-foreground hover:bg-foreground/5'}`}>Site Crawler</button>
+                  </div>
+                </div>
+
+                {mode === "accessibility" && (
+                  <div className="flex justify-center -mt-6 mb-8">
+                    <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 animate-in fade-in slide-in-from-top-2">
+                      <Eye className="w-3 h-3" /> Accessibility Mode Active
+                    </span>
+                  </div>
+                )}
+
+                <div className="min-h-[200px] flex flex-col justify-center">
+                  {mode === "upload" ? (
+                    previews.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {previews.map((src, i) => (
+                          <div key={i} className="relative group">
+                            <img
+                              src={src}
+                              onClick={() => setSelectedImage(src)}
+                              className="rounded-xl border border-border-dim w-full h-32 object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
+                            />
+                            <button
+                              onClick={() => removeImage(i)}
+                              className="absolute top-2 right-2 bg-foreground/60 hover:bg-red-500 text-background p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm transform hover:scale-110"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                           </div>
-                       ) : (
-                          <label className="border-2 border-dashed border-white/10 rounded-2xl h-48 flex flex-col items-center justify-center hover:bg-white/[0.02] hover:border-indigo-500/30 transition-all cursor-pointer">
-                             <Upload className="w-8 h-8 text-slate-500 mb-4" /><p className="text-slate-300 font-medium">Click to Upload or Paste (Ctrl+V)</p><input type="file" multiple onChange={handleFileChange} className="hidden" />
-                          </label>
-                       )
-                    ) : (
-                       <div className="w-full">
-                         <input type="text" placeholder={mode === "crawler" ? "https://example.com (Scans 3 pages)" : (mode === "accessibility" ? "https://example.com (Accessibility Scan)" : "https://example.com")} value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-4 text-white focus:border-indigo-500 focus:outline-none" />
-                         {mode === "crawler" && <p className="text-xs text-slate-500 mt-3 text-center">Crawler will analyze home, about, pricing, and other key pages automatically.</p>}
-                         {mode === "accessibility" && <p className="text-xs text-slate-500 mt-3 text-center">Simulates Low-Vision, Screen Reader, and Motor Impairment experiences.</p>}
-                       </div>
-                    )}
-                 </div>
-
-                 <div className="mt-8 pt-8 border-t border-white/5 flex gap-4">
-                    <select value={framework} onChange={(e) => setFramework(e.target.value)} className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none">
-                       <option value="nielsen">Nielsen's Heuristics</option>
-                       <option value="wcag">WCAG 2.1 (Accessibility)</option>
-                       <option value="gestalt">Gestalt Principles</option>
-                    </select>
-                    <button onClick={handleAudit} disabled={loading} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50">
-                      {loading ? <Loader2 className="animate-spin w-5 h-5" /> : "Run Deep Audit"}
-                    </button>
-                 </div>
-               </div>
-
-               {/* RESULTS DISPLAY */}
-               <AnimatePresence>
-                 {analysis && (
-                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mt-12 space-y-6">
-                      <div className="flex justify-between items-center">
-                         <div>
-                            <h2 className="text-2xl font-bold text-white">{currentUiTitle}</h2>
-                            <p className="text-slate-400 text-sm">{analysis.length} Issues Found</p>
-                         </div>
-                         {isSignedIn && (
-                            <button onClick={() => generatePDF(analysis, currentUiTitle, previews)} className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-200"><Download className="w-4 h-4" /> Export PDF</button>
-                         )}
+                        ))}
+                        <label className="border border-dashed border-border-dim rounded-xl flex items-center justify-center cursor-pointer hover:bg-foreground/5 min-h-[128px] transition-colors">
+                          <Plus className="w-6 h-6 text-muted-text" />
+                          <input type="file" multiple onChange={handleFileChange} className="hidden" />
+                        </label>
                       </div>
+                    ) : (
+                      <label className="border-2 border-dashed border-border-dim rounded-2xl h-48 flex flex-col items-center justify-center hover:bg-foreground/5 hover:border-accent-primary transition-all cursor-pointer">
+                        <Upload className="w-8 h-8 text-muted-text mb-4" /><p className="text-foreground font-medium">Click to Upload or Paste (Ctrl+V)</p><input type="file" multiple onChange={handleFileChange} className="hidden" />
+                      </label>
+                    )
+                  ) : (
+                    <div className="w-full">
+                      <input type="text" placeholder={mode === "crawler" ? "https://example.com (Scans 3 pages)" : (mode === "accessibility" ? "https://example.com (Accessibility Scan)" : "https://example.com")} value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="w-full bg-background border border-border-dim rounded-xl px-5 py-4 text-foreground focus:border-accent-primary focus:outline-none transition-colors" />
+                      {mode === "crawler" && <p className="text-xs text-muted-text mt-3 text-center">Crawler will analyze home, about, pricing, and other key pages automatically.</p>}
+                      {mode === "accessibility" && <p className="text-xs text-muted-text mt-3 text-center">Simulates Low-Vision, Screen Reader, and Motor Impairment experiences.</p>}
+                    </div>
+                  )}
+                </div>
 
-                      {analysis.map((item, index) => {
-                         if (!isSignedIn && index > 0) return index === 1 ? (
-                            <div key="lock" className="bg-[#121214] border border-white/5 rounded-2xl p-12 text-center relative overflow-hidden">
-                               <div className="absolute inset-0 bg-indigo-500/5 blur-3xl" />
-                               <Lock className="w-10 h-10 text-indigo-400 mx-auto mb-4 relative z-10" />
-                               <h3 className="text-xl font-bold text-white relative z-10">Unlock {analysis.length - 1} More Issues</h3>
-                               <SignInButton mode="modal"><button className="mt-4 px-6 py-2 bg-white text-black font-bold rounded-lg relative z-10">Sign In</button></SignInButton>
-                            </div>
-                         ) : null;
-                         return (
-                            <motion.div key={index} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-[#121214] border border-white/5 rounded-xl p-6 hover:border-white/10 transition-colors">
-                               <div className="flex gap-4">
-                                  <div className={`mt-1 p-2 rounded-lg h-fit ${item.severity === 'High' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}><AlertCircle className="w-5 h-5" /></div>
-                                  <div>
-                                     <h3 className="text-lg font-bold text-white mb-2">{item.title}</h3>
-                                     <p className="text-slate-400 text-sm mb-4">{item.critique}</p>
-                                     <div className="bg-green-500/5 border border-green-500/10 p-4 rounded-lg">
-                                        <p className="text-green-400 font-bold text-xs uppercase mb-1">Fix</p>
-                                        <p className="text-slate-300 text-sm">{item.fix}</p>
-                                     </div>
-                                  </div>
-                               </div>
-                            </motion.div>
-                         );
-                      })}
-                   </motion.div>
-                 )}
-               </AnimatePresence>
+                <div className="mt-8 pt-8 border-t border-border-dim flex flex-col md:flex-row gap-4 items-stretch">
+                  <div className="relative w-full md:flex-1 md:min-w-[300px]">
+                    <button
+                      onClick={() => setFrameworkMenuOpen(!frameworkMenuOpen)}
+                      className="w-full bg-background border border-border-dim rounded-xl px-4 py-3 text-sm text-foreground flex justify-between items-center hover:bg-foreground/5 transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
+                    >
+                      <span className="truncate mr-2">
+                        {framework === "nielsen" && "Nielsen's Heuristics"}
+                        {framework === "wcag" && "WCAG 2.1 (Accessibility)"}
+                        {framework === "gestalt" && "Gestalt Principles"}
+                      </span>
+                      <ChevronDown className={`w-4 h-4 text-muted-text transition-transform ${frameworkMenuOpen ? "rotate-180" : ""}`} />
+                    </button>
+
+                    <AnimatePresence>
+                      {frameworkMenuOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          className="absolute bottom-full mb-2 left-0 w-full bg-card border border-border-dim rounded-xl shadow-2xl overflow-hidden z-50 ring-1 ring-black/5"
+                        >
+                          {[
+                            { val: "nielsen", label: "Nielsen's Heuristics" },
+                            { val: "wcag", label: "WCAG 2.1 (Accessibility)" },
+                            { val: "gestalt", label: "Gestalt Principles" }
+                          ].map((opt) => (
+                            <button
+                              key={opt.val}
+                              onClick={() => {
+                                setFramework(opt.val);
+                                setFrameworkMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center gap-2 ${framework === opt.val ? "bg-accent-primary/10 text-accent-primary font-medium" : "text-foreground hover:bg-foreground/5"}`}
+                            >
+                              {framework === opt.val && <CheckCircle className="w-4 h-4 text-accent-primary" />}
+                              <span className={framework !== opt.val ? "pl-6" : ""}>{opt.label}</span>
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <button onClick={handleAudit} disabled={loading} className="group w-full md:w-auto md:min-w-[200px] md:px-10 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-accent-primary/20 hover:shadow-xl hover:shadow-accent-primary/40 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 py-4 md:py-3">
+                    {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <><span>Run Deep Audit</span><ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-300" /></>}
+                  </button>
+                </div>
+              </div>
+
+              {/* REPORT DISPLAY - NEW COMPONENT */}
+              <AnimatePresence>
+                {analysisData && (
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+
+                    {/* ACTION BAR */}
+                    <div className="flex justify-between items-center bg-card p-4 rounded-xl border border-border-dim shadow-sm">
+                      <div className="text-sm text-muted-text">
+                        <strong>{analysisData.audit?.length || 0}</strong> Issues Found
+                      </div>
+                      {isSignedIn && (
+                        <button
+                          onClick={handleExportPDF}
+                          disabled={pdfGenerating}
+                          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg disabled:opacity-50 transition-colors"
+                        >
+                          {pdfGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                          Export PDF Report
+                        </button>
+                      )}
+                    </div>
+
+                    {/* NEW VISUAL REPORT */}
+                    <ReportView data={analysisData} uiTitle={analysisData.ui_title || ""} />
+
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
 
           {/* --- TAB 2: HISTORY --- */}
           {activeTab === "history" && (
-             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <h1 className="text-3xl font-bold text-white mb-8">Audit History</h1>
-                {history.length === 0 ? (
-                   <div className="text-center py-20 border border-dashed border-white/10 rounded-3xl">
-                      <HistoryIcon className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                      <p className="text-slate-500">No past audits found.</p>
-                   </div>
-                ) : (
-                   <div className="grid md:grid-cols-2 gap-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              {/* Conditional Render: Detail View or List View */}
+              {selectedHistoryItem ? (
+                // --- DETAIL VIEW FOR SELECTED HISTORY ITEM ---
+                <div>
+                  {/* Back Button */}
+                  <button
+                    onClick={() => setSelectedHistoryItem(null)}
+                    className="flex items-center gap-2 text-muted-text hover:text-foreground mb-6 transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to History
+                  </button>
+
+                  {/* Header */}
+                  <div className="flex justify-between items-start mb-8">
+                    <div>
+                      <h1 className="text-3xl font-bold text-foreground mb-2">{selectedHistoryItem.ui_title}</h1>
+                      <p className="text-muted-text text-sm">{selectedHistoryItem.framework} • {selectedHistoryItem.date}</p>
+                    </div>
+                    {isSignedIn && selectedHistoryItem.analysis && (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => {
+                            setAnalysisData(selectedHistoryItem.analysis);
+                            handleExportPDF();
+                          }}
+                          disabled={pdfGenerating}
+                          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg disabled:opacity-50 transition-all"
+                        >
+                          {pdfGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                          Export PDF
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            deleteHistoryItem(selectedHistoryItem.id, e);
+                            setSelectedHistoryItem(null); // Return to list after delete
+                          }}
+                          className="flex items-center gap-2 bg-red-600/20 hover:bg-red-600/30 text-red-500 border border-red-500/20 px-4 py-2 rounded-lg font-bold text-sm transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete Audit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Screenshot Preview */}
+                  {selectedHistoryItem.preview && (
+                    <div className="mb-8">
+                      <h3 className="text-sm font-bold text-slate-400 mb-3">ANALYZED SCREENSHOT</h3>
+                      <div className="bg-[#121214] border border-white/5 rounded-2xl p-4 inline-block">
+                        <img
+                          src={selectedHistoryItem.preview}
+                          alt="Audit Screenshot"
+                          className="max-h-[300px] rounded-lg border border-white/10 object-contain"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Report */}
+                  {selectedHistoryItem.analysis ? (
+                    <ReportView data={selectedHistoryItem.analysis} uiTitle={selectedHistoryItem.ui_title || ""} />
+                  ) : (
+                    <div className="text-center py-20 border border-dashed border-white/10 rounded-3xl">
+                      <p className="text-slate-500">No analysis data available for this audit.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // --- LIST VIEW ---
+                <>
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                    <div className="flex items-center gap-4">
+                      <h1 className="text-3xl font-bold text-foreground">Audit History</h1>
+                      {history.length > 0 && (
+                        <button
+                          onClick={toggleSelectAll}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-foreground/5 border border-border-dim rounded-lg text-xs font-bold text-muted-text hover:text-foreground hover:bg-foreground/10 transition-all"
+                        >
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${selectedIds.size === history.length ? 'bg-accent-primary border-accent-primary' : 'border-border-dim'}`}>
+                            {selectedIds.size === history.length && <CheckCircle className="w-3 h-3 text-white" />}
+                          </div>
+                          {selectedIds.size === history.length ? "Deselect All" : "Select All"}
+                        </button>
+                      )}
+                    </div>
+                    {selectedIds.size > 0 && (
+                      <button
+                        onClick={deleteSelectedAudits}
+                        className="group flex items-center gap-2 px-4 py-2 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 rounded-xl font-bold text-sm transition-all duration-300 animate-in fade-in slide-in-from-right-4"
+                      >
+                        <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" />
+                        Delete Selected ({selectedIds.size})
+                      </button>
+                    )}
+                  </div>
+                  {history.length === 0 ? (
+                    <div className="text-center py-20 border border-dashed border-border-dim rounded-3xl bg-card/50">
+                      <HistoryIcon className="w-12 h-12 text-slate-600 dark:text-slate-400 mx-auto mb-4" />
+                      <p className="text-muted-text">No past audits found.</p>
+                    </div>
+                  ) : (
+                    <div className="grid md:grid-cols-2 gap-6">
                       {history.map((record) => (
-                         <div 
-                            key={record.id} 
-                            className="bg-[#121214] border border-white/5 rounded-2xl p-4 hover:border-indigo-500/30 transition-all group cursor-pointer relative overflow-hidden" 
-                            onClick={() => { 
-                               // 1. Normalize Old Data (Map issue/solution -> critique/fix)
-                               const restoredAnalysis = record.analysis.map((item: any) => ({
-                                  title: item.title || item.issue?.substring(0, 30) + "..." || "Issue Finding",
-                                  critique: item.critique || item.issue || "No detail provided",
-                                  fix: item.fix || item.solution || "No solution provided",
-                                  severity: item.severity || "medium"
-                               }));
-                               
-                               setAnalysis(restoredAnalysis); 
-                               setCurrentUiTitle(record.ui_title); 
-                               
-                               // 2. Restore Images
-                               if (record.preview) {
-                                  setPreviews([record.preview]); 
-                                  setMode("upload");
-                               }
-                               
-                               setActiveTab("dashboard"); 
-                            }}
-                         >
-                            <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                            <div className="flex gap-4 mb-4 relative z-10">
-                               <div className="w-20 h-20 bg-black rounded-lg overflow-hidden border border-white/10 shrink-0">
-                                  {/* USE CLOUD URL HERE */}
-                                  {record.preview && <img src={record.preview} className="w-full h-full object-cover" />}
-                               </div>
-                               <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-start">
-                                      <h3 className="text-white font-bold truncate text-lg">{record.ui_title}</h3>
-                                      <button onClick={(e) => deleteHistoryItem(record.id, e)} className="text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-4 h-4" /></button>
-                                  </div>
-                                  <p className="text-xs text-slate-500 mt-1">{record.framework} • {record.date}</p>
-                                  <div className="flex gap-2 mt-3">
-                                      <span className="text-[10px] bg-white/5 text-slate-300 px-2 py-0.5 rounded border border-white/10">{record.analysis.length} Issues</span>
-                                  </div>
-                               </div>
+                        <div
+                          key={record.id}
+                          className={`bg-card border rounded-2xl p-4 transition-all duration-300 group cursor-pointer relative overflow-hidden hover:scale-[1.02] hover:-translate-y-1 hover:shadow-2xl hover:shadow-accent-primary/10 ${selectedIds.has(record.id) ? 'border-accent-primary/50 bg-accent-primary/5 shadow-inner shadow-accent-primary/5' : 'border-border-dim hover:border-accent-primary/30 shadow-sm'}`}
+                          onClick={() => setSelectedHistoryItem(record)}
+                        >
+                          {/* Selection Checkbox */}
+                          <div
+                            onClick={(e) => toggleSelectId(record.id, e)}
+                            className={`absolute top-4 left-4 z-20 w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedIds.has(record.id) ? 'bg-accent-primary border-accent-primary opacity-100' : 'border-border-dim opacity-0 group-hover:opacity-100'}`}
+                          >
+                            {selectedIds.has(record.id) && <CheckCircle className="w-3 h-3 text-white" />}
+                          </div>
+
+                          <div className="absolute inset-0 bg-gradient-to-br from-foreground/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <div className={`flex gap-4 mb-4 relative z-10 transition-transform duration-300 ${selectedIds.has(record.id) ? 'translate-x-4' : 'group-hover:translate-x-2'}`}>
+                            <div className="w-20 h-20 bg-background rounded-lg overflow-hidden border border-border-dim shrink-0">
+                              {record.preview && <img src={record.preview} className="w-full h-full object-cover" />}
                             </div>
-                         </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-start">
+                                <h3 className="text-foreground font-bold truncate text-lg">{record.ui_title}</h3>
+                                <button onClick={(e) => deleteHistoryItem(record.id, e)} className="text-muted-text hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-4 h-4" /></button>
+                              </div>
+                              <p className="text-xs text-muted-text mt-1">{record.framework} • {record.date}</p>
+                            </div>
+                          </div>
+                        </div>
                       ))}
-                   </div>
-                )}
-             </motion.div>
+                    </div>
+                  )}
+                </>
+              )}
+            </motion.div>
           )}
+
+          {/* --- TAB 3: PRICING --- */}
+          {activeTab === "pricing" && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <PricingPlans onUpgrade={handleUpgrade} />
+            </div>
+          )}
+
         </div>
       </main>
-
-      {/* SUBSCRIPTION MODAL */}
-      <AnimatePresence>
-        {showSubscription && (
-           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#121214] border border-white/10 p-8 rounded-3xl max-w-md w-full relative overflow-hidden">
-                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
-                 <button onClick={() => setShowSubscription(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white"><X className="w-5 h-5" /></button>
-                 <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/20"><Zap className="w-8 h-8 text-amber-500" /></div>
-                    <h3 className="text-2xl font-bold text-white mb-2">Upgrade to Pro</h3>
-                    <p className="text-slate-400 text-sm">You've used your 2 free audits. Upgrade for unlimited access.</p>
-                 </div>
-                 <div className="bg-white/5 rounded-xl p-4 mb-6">
-                    <div className="flex justify-between items-center mb-2"><span className="text-white font-medium">Monthly Plan</span><span className="text-xl font-bold text-white">₹109<span className="text-xs text-slate-400 font-normal">/mo</span></span></div>
-                    <ul className="text-sm text-slate-400 space-y-2">
-                       <li className="flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-500" /> Unlimited Audits</li>
-                       <li className="flex items-center gap-2"><CheckCircle className="w-3 h-3 text-green-500" /> Official PDF Reports</li>
-                    </ul>
-                 </div>
-                 <button onClick={handleUpgrade} disabled={loading} className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 rounded-xl font-bold text-black flex items-center justify-center gap-2 transition-all shadow-lg shadow-orange-500/20">
-                   {loading ? <Loader2 className="animate-spin w-5 h-5" /> : "Pay ₹109 & Activate"}
-                 </button>
-              </motion.div>
-           </div>
-        )}
-      </AnimatePresence>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background text-foreground">Loading Dashboard...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

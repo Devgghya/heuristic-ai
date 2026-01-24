@@ -16,6 +16,18 @@ export async function GET() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS user_usage (
+        user_id VARCHAR(255) PRIMARY KEY,
+        plan VARCHAR(20) DEFAULT 'free',
+        audits_used INTEGER DEFAULT 0,
+        period_key VARCHAR(7) NOT NULL,
+        token_limit INTEGER DEFAULT 2000,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+
     return NextResponse.json({ message: "Table 'audits' created successfully" });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

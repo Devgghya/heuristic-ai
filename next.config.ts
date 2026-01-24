@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    // Empty config for now to rule out experimental issues
+    experimental: {
+        serverActions: {
+            allowedOrigins: ["localhost:3001", "localhost:3000"]
+        }
+    }
 };
 
 export default nextConfig;

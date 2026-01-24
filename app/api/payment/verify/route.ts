@@ -1,0 +1,59 @@
+import { NextResponse } from "next/server";
+import crypto from "crypto";
+import { auth } from "@clerk/nextjs/server";
+import { sql } from "@vercel/postgres";
+
+export const runtime = "nodejs";
+
+const FREE_MAX_TOKENS = 2000;
+const LITE_MAX_TOKENS = 2500;
+const PLUS_MAX_TOKENS = 3000;
+const PRO_MAX_TOKENS = 4000;
+const AGENCY_MAX_TOKENS = 8000;
+
+export async function POST(req: Request) {
+    try {
+        const { userId } = await auth();
+        if (!userId) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature, planId } = await req.json();
+
+        const body = razorpay_order_id + "|" + razorpay_payment_id;
+
+        const expectedSignature = crypto
+            .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+            .update(body.toString())
+            .digest("hex");
+
+        const isAuthentic = expectedSignature === razorpay_signature;
+
+        if (isAuthentic) {
+            // Payment Verified - Update User Plan
+            let targetTokenLimit = FREE_MAX_TOKENS;
+            if (planId === "lite") targetTokenLimit = LITE_MAX_TOKENS;
+            else if (planId === "plus") targetTokenLimit = PLUS_MAX_TOKENS;
+            else if (planId === "pro") targetTokenLimit = PRO_MAX_TOKENS;
+            else if (planId === "agency") targetTokenLimit = AGENCY_MAX_TOKENS;
+
+            const current = new Date().toISOString().slice(0, 7);
+
+            await sql`
+        INSERT INTO user_usage (user_id, plan, audits_used, period_key, token_limit)
+        VALUES (${userId}, ${planId}, 0, ${current}, ${targetTokenLimit})
+        ON CONFLICT (user_id) DO UPDATE SET
+          plan = EXCLUDED.plan,
+          token_limit = EXCLUDED.token_limit,
+          updated_at = NOW()
+      `;
+
+            return NextResponse.json({ success: true });
+        } else {
+            return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+        }
+    } catch (error) {
+        console.error("Razorpay Verify Error:", error);
+        return NextResponse.json({ error: "Verification failed" }, { status: 500 });
+    }
+}

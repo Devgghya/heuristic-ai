@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { SignInButton } from "@clerk/nextjs";
 import { useUser } from "@clerk/nextjs";
-import { Plus, Trash2, BarChart3, Loader, Download } from "lucide-react";
+import { Plus, Trash2, BarChart3, Loader, Download, LayoutDashboard, GitCompare, Home as HomeIcon, Zap, Lightbulb } from "lucide-react";
 import Link from "next/link";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface Competitor {
   id: string;
@@ -135,159 +136,247 @@ export default function ComparePage() {
     return metrics;
   };
 
-  const exportPDF = () => {
+  // --- PDF ENGINE (COMPARE - DARK THEME) ---
+  const exportPDF = async () => {
     try {
+      // Dynamic imports
+      const jsPDF = (await import("jspdf")).default;
+      const autoTable = (await import("jspdf-autotable")).default;
+
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      
-       // Brand Colors
-      const BRAND_COLOR = [99, 102, 241]; // Indigo
-      const DARK_BG = [10, 10, 10]; // Black
 
-      // --- COVER PAGE ---
-      doc.setFillColor(DARK_BG[0], DARK_BG[1], DARK_BG[2]); 
+      // COLORS (Forced Light Mode)
+      const BG = { r: 255, g: 255, b: 255 };
+      const CARD = { r: 248, g: 250, b: 252 };
+      const ACCENT = { r: 79, g: 70, b: 229 }; // Indigo-600
+      const TEXT_MAIN = { r: 2, g: 6, b: 23 };
+      const TEXT_MUTED = { r: 100, g: 116, b: 139 };
+      const STROKE = { r: 226, g: 232, b: 240 };
+
+      // HELPER: Rounded Rect
+      const roundedRect = (x: number, y: number, w: number, h: number, r: number = 3) => {
+        doc.roundedRect(x, y, w, h, r, r, "F");
+        doc.setDrawColor(STROKE.r, STROKE.g, STROKE.b);
+        doc.setLineWidth(0.1);
+        doc.roundedRect(x, y, w, h, r, r, "S");
+      };
+
+      // --- PAGE 1: COVER ---
+      doc.setFillColor(BG.r, BG.g, BG.b);
       doc.rect(0, 0, pageWidth, pageHeight, "F");
-      
-      doc.setFillColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
-      doc.rect(0, 0, pageWidth, 4, "F");
 
       // Logo
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(40);
-      doc.setTextColor(255, 255, 255);
-      doc.text("Heuristic", 20, 60);
-      doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
-      doc.text(".ai", 20 + doc.getTextWidth("Heuristic"), 60);
+      // Logo
+      try {
+        const logoUrl = window.location.origin + "/heuristic-logo.png";
+        const logoImg = new Image();
+        logoImg.src = logoUrl;
+        await new Promise((resolve) => {
+          logoImg.onload = resolve;
+          logoImg.onerror = resolve;
+        });
+        // Draw Logo Large on Cover
+        doc.addImage(logoImg, "PNG", 20, 25, 20, 20);
 
-      doc.setFontSize(24);
-      doc.setTextColor(255, 255, 255);
-      doc.text("Competitor Benchmark Report", 20, 110);
-      
-      doc.setFontSize(14);
-      doc.setTextColor(150, 150, 150);
-      doc.text(`Comparisons: ${competitors.length + 1} Sites`, 20, 125);
-      doc.text(`Framework: ${framework.toUpperCase()}`, 20, 132);
-      doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 139);
-
-      // --- SUMMARY PAGE ---
-      doc.addPage();
-      
-      // Header
-      const drawHeader = () => {
-        doc.setFillColor(250, 250, 250);
-        doc.rect(0, 0, pageWidth, 25, "F");
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
-        doc.text("Comparison Matrix", 15, 17);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(150, 150, 150);
-        doc.text("Heuristic.ai", pageWidth - 40, 17);
-        doc.setDrawColor(230, 230, 230);
-        doc.line(0, 25, pageWidth, 25);
-      };
-      drawHeader();
+        doc.setFontSize(32);
+        doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+        doc.text("Heuristic", 45, 40);
+        doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
+        doc.text(".ai", 45 + doc.getTextWidth("Heuristic"), 40);
+      } catch (e) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(32);
+        doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+        doc.text("Heuristic", 20, 40);
+        doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
+        doc.text(".ai", 20 + doc.getTextWidth("Heuristic"), 40);
+      }
 
-      let yPosition = 40;
+      // Title
+      doc.setFontSize(24);
+      doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+      doc.text("Benchmark Report", 20, 60);
 
-      // Summary Table
-      const summaryData: any[] = [["Metric", yourSite.name, ...competitors.map((c) => c.name)]];
+      // Info Card
+      doc.setFillColor(CARD.r, CARD.g, CARD.b);
+      roundedRect(20, 70, pageWidth - 40, 40);
+
+      doc.setFontSize(10);
+      doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+      doc.text("PRIMARY SITE", 30, 80);
+      doc.setFontSize(14);
+      doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+      doc.text(yourSite.name, 30, 88);
+
+      doc.setFontSize(10);
+      doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+      doc.text("COMPETITORS", 100, 80);
+      doc.setFontSize(14);
+      doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+      doc.text(`${competitors.length} Sites Analyzed`, 100, 88);
+
+      doc.setFontSize(10);
+      doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+      doc.text("DATE", pageWidth - 60, 80);
+      doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+      doc.text(new Date().toLocaleDateString(), pageWidth - 60, 88);
+
+
+      // --- METRICS TABLE ---
+      doc.setFontSize(14);
+      doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+      doc.text("High-Level Comparison", 20, 130);
+
+      const summaryData: any[] = [["METRIC", yourSite.name, ...competitors.map((c) => c.name)]];
       const yourMetrics = calculateMetrics(yourSite.analysis);
       const compMetrics = competitors.map((c) => calculateMetrics(c.analysis));
 
-      summaryData.push([
-        "Total Issues",
-        yourMetrics.total,
-        ...compMetrics.map((m) => m.total),
-      ]);
-      summaryData.push([
-        "Critical",
-        yourMetrics.critical,
-        ...compMetrics.map((m) => m.critical),
-      ]);
-      summaryData.push([
-        "High",
-        yourMetrics.high,
-        ...compMetrics.map((m) => m.high),
-      ]);
-      summaryData.push([
-        "Medium",
-        yourMetrics.medium,
-        ...compMetrics.map((m) => m.medium),
-      ]);
+      summaryData.push(["Total Issues", yourMetrics.total, ...compMetrics.map(m => m.total)]);
+      summaryData.push(["Critical", yourMetrics.critical, ...compMetrics.map(m => m.critical)]);
+      summaryData.push(["High", yourMetrics.high, ...compMetrics.map(m => m.high)]);
 
       autoTable(doc, {
         head: [summaryData[0]],
         body: summaryData.slice(1),
-        startY: yPosition,
+        startY: 140,
         theme: "grid",
-        headStyles: { 
-            fillColor: DARK_BG, 
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-            lineWidth: 0
+        headStyles: {
+          fillColor: [CARD.r, CARD.g, CARD.b],
+          textColor: [ACCENT.r, ACCENT.g, ACCENT.b],
+          fontStyle: "bold",
+          lineWidth: 0
         },
-        alternateRowStyles: { fillColor: [245, 245, 250] },
-        styles: { textColor: [40, 40, 40], fontSize: 10, cellPadding: 5 },
-        margin: { left: 15, right: 15 },
+        bodyStyles: {
+          fillColor: [BG.r, BG.g, BG.b],
+          textColor: [TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b],
+          lineWidth: 0.1,
+          lineColor: [STROKE.r, STROKE.g, STROKE.b]
+        },
+        alternateRowStyles: { fillColor: [BG.r, BG.g, BG.b] }, // Keep dark
+        styles: { fontSize: 10, cellPadding: 6 },
+        margin: { left: 20, right: 20 },
       });
 
-      yPosition = (doc as any).lastAutoTable.finalY + 20;
+      // --- DETAILED FINDINGS ---
+      doc.addPage();
+      doc.setFillColor(BG.r, BG.g, BG.b);
+      doc.rect(0, 0, pageWidth, pageHeight, "F");
 
-      // Detailed Issues per Site
+      let cursorY = 20;
+
       [
-        { name: yourSite.name, analysis: yourSite.analysis },
-        ...competitors.map((c) => ({ name: c.name, analysis: c.analysis })),
-      ].forEach((site, siteIdx) => {
-        if (yPosition > pageHeight - 50) {
+        { name: yourSite.name, analysis: yourSite.analysis, isYours: true },
+        ...competitors.map((c) => ({ name: c.name, analysis: c.analysis, isYours: false })),
+      ].forEach((site) => {
+
+        // Section Header
+        if (cursorY > pageHeight - 40) {
           doc.addPage();
-          drawHeader();
-          yPosition = 40;
+          doc.setFillColor(BG.r, BG.g, BG.b);
+          doc.rect(0, 0, pageWidth, pageHeight, "F");
+          cursorY = 20;
         }
 
-        doc.setFontSize(18);
-        doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
+        doc.setFontSize(16);
+        doc.setTextColor(site.isYours ? ACCENT.r : TEXT_MAIN.r, site.isYours ? ACCENT.g : TEXT_MAIN.g, site.isYours ? ACCENT.b : TEXT_MAIN.b);
         doc.setFont("helvetica", "bold");
-        doc.text(`${site.name}`, 15, yPosition);
-        yPosition += 10;
+        doc.text(site.name, 20, cursorY);
+        cursorY += 10;
 
-        if (!site.analysis?.audit || site.analysis.audit.length === 0) {
+        const issues = site.analysis?.audit || [];
+        if (issues.length === 0) {
           doc.setFontSize(10);
-          doc.setTextColor(100, 100, 100);
-          doc.text("No significant issues detected.", 15, yPosition);
-          yPosition += 20;
+          doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+          doc.text("No significant issues detected.", 20, cursorY);
+          cursorY += 20;
         } else {
-          const issuesData: any[] = site.analysis.audit.map((issue: any) => [
-              issue.title || "Issue",
-              issue.severity ? issue.severity.toUpperCase() : "MED",
-              `${issue.issue || issue.critique}\n\nFIX: ${issue.solution || issue.fix}`
-          ]);
+          issues.forEach((item: any) => {
+            // 1. Calculate Text Dimensions first
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "bold");
+            // Title wraps
+            const titleLines = doc.splitTextToSize(item.title || "Issue", pageWidth - 70);
+            const titleHeight = titleLines.length * 5;
 
-          autoTable(doc, {
-            head: [["Issue", "Sev", "Analysis"]],
-            body: issuesData,
-            startY: yPosition,
-            theme: "grid",
-            headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: "bold" },
-            bodyStyles: { textColor: [40, 40, 40], fontSize: 9 },
-            columnStyles: { 
-              0: { cellWidth: 40, fontStyle: "bold" }, 
-              1: { cellWidth: 20, halign: "center" },
-            },
-            margin: { left: 15, right: 15 },
-            didDrawPage: function(data) {
-                 if (data.pageNumber > 2) drawHeader();
+            doc.setFontSize(9);
+            doc.setFont("helvetica", "normal");
+            const descLines = doc.splitTextToSize(item.issue || "No description", pageWidth - 55);
+            const descHeight = descLines.length * 4; // 4pt per line
+
+            const fixLines = doc.splitTextToSize("Fix: " + (item.solution || "No solution"), pageWidth - 55);
+            const fixHeight = fixLines.length * 4;
+
+            // Padding (Top 8 + Gap 8 + Gap 8 + Bottom 8) approx
+            const cardHeight = 8 + titleHeight + 4 + descHeight + 6 + fixHeight + 8;
+
+            // 2. Check Page Break
+            if (cursorY + cardHeight > pageHeight - 20) {
+              doc.addPage();
+              doc.setFillColor(BG.r, BG.g, BG.b);
+              doc.rect(0, 0, pageWidth, pageHeight, "F");
+              cursorY = 20;
             }
-          });
 
-          yPosition = (doc as any).lastAutoTable.finalY + 15;
+            // 3. Draw Card Background
+            doc.setFillColor(CARD.r, CARD.g, CARD.b);
+            roundedRect(20, cursorY, pageWidth - 40, cardHeight);
+
+            let contentY = cursorY + 8;
+
+            // 4. Draw Title
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
+            doc.text(titleLines, 25, contentY); // .text handles array of lines
+
+            // Severity Pill
+            const sev = (item.severity || "LOW").toUpperCase();
+            const sevColor = sev === "CRITICAL" ? [239, 68, 68] : sev === "HIGH" ? [245, 158, 11] : [59, 130, 246];
+            doc.setFillColor(sevColor[0], sevColor[1], sevColor[2]);
+            // Draw pill slightly higher aligned with first line of title
+            doc.roundedRect(pageWidth - 45, cursorY + 4, 20, 6, 1, 1, "F");
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(7);
+            doc.setFont("helvetica", "bold");
+            doc.text(sev, pageWidth - 35, cursorY + 8, { align: "center" });
+
+            contentY += titleHeight + 4;
+
+            // 5. Draw Description (Full Text)
+            doc.setFontSize(9);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
+            doc.text(descLines, 25, contentY);
+
+            contentY += descHeight + 6;
+
+            // 6. Draw Fix (Full Text)
+            if (item.solution) {
+              doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
+              doc.text(fixLines, 25, contentY);
+              contentY += fixHeight;
+            }
+
+            cursorY += cardHeight + 5; // Margin between cards
+          });
+          cursorY += 10; // Spacer between sites
         }
       });
 
-      // Save the PDF
-      const fileName = `heuristic-compare-${Date.now()}.pdf`;
-      doc.save(fileName);
+      // Footer
+      const pages = doc.getNumberOfPages();
+      for (let i = 1; i <= pages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text("Heuristic.ai Benchmark Report", pageWidth - 20, pageHeight - 10, { align: "right" });
+      }
+
+      doc.save("Heuristic_Comparison_Report.pdf");
+
     } catch (error) {
       console.error("Error generating PDF:", error);
       alert("Error generating PDF. Please try again.");
@@ -299,39 +388,60 @@ export default function ComparePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-6">
-      {/* Back Link */}
-      <div className="max-w-7xl mx-auto mb-8">
-        <Link href="/" className="text-indigo-400 hover:text-indigo-300 text-sm">
-          ← Back to Dashboard
+    <div className="min-h-screen bg-background text-foreground p-6 pb-24 md:pb-6 transition-colors duration-500">
+      {/* MOBILE NAVIGATION BAR */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-card/80 backdrop-blur-lg border-t border-border-dim px-6 py-3 flex justify-around items-center md:hidden">
+        <Link
+          href="/dashboard"
+          className="flex flex-col items-center gap-1 text-muted-text hover:text-accent-primary transition-all"
+        >
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Dashboard</span>
         </Link>
+        <ThemeToggle />
+        <Link
+          href="/compare"
+          className="flex flex-col items-center gap-1 text-accent-primary transition-all font-bold"
+        >
+          <GitCompare className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Compare</span>
+        </Link>
+      </nav>
+
+      {/* Back Link & Toggle */}
+      <div className="max-w-7xl mx-auto mb-8 flex justify-between items-center">
+        <Link href="/dashboard" className="text-accent-primary hover:opacity-80 text-sm font-bold flex items-center gap-2 transition-all">
+          <LayoutDashboard className="w-4 h-4" /> Back to Dashboard
+        </Link>
+        <div className="hidden md:block">
+          <ThemeToggle />
+        </div>
       </div>
 
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-12">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <BarChart3 className="w-6 h-6" />
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-4 mb-4">
+            <div className="w-12 h-12 bg-accent-primary rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-accent-primary/20">
+              <BarChart3 className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-4xl font-bold">Competitor Compare</h1>
+            <h1 className="text-3xl md:text-5xl font-black text-foreground tracking-tight">Competitor Benchmark</h1>
           </div>
-          <p className="text-slate-400 text-lg">Audit your site and competitors side-by-side</p>
+          <p className="text-muted-text text-base md:text-xl font-medium">Audit your site and competitors side-by-side</p>
         </div>
 
         {/* Framework Selection */}
-        <div className="mb-8 bg-[#121214] border border-white/5 rounded-2xl p-6">
-          <label className="block text-sm font-bold mb-4">Heuristic Framework</label>
+        <div className="mb-8 bg-card border border-border-dim rounded-2xl p-6 shadow-sm">
+          <label className="block text-sm font-bold mb-4 text-foreground">Heuristic Framework</label>
           <div className="grid md:grid-cols-3 gap-4">
             {["nielsen", "wcag", "gestalt"].map((f) => (
               <button
                 key={f}
                 onClick={() => setFramework(f)}
-                className={`p-4 rounded-lg border-2 transition-all capitalize ${
-                  framework === f
-                    ? "border-indigo-500 bg-indigo-500/10"
-                    : "border-white/10 bg-white/5 hover:border-white/20"
-                }`}
+                className={`p-4 rounded-xl border-2 transition-all capitalize font-bold ${framework === f
+                  ? "border-accent-primary bg-accent-primary/10 text-accent-primary shadow-[0_0_20px_rgba(99,102,241,0.1)]"
+                  : "border-border-dim bg-foreground/5 text-muted-text hover:border-border-dim/50 hover:bg-foreground/[0.08]"
+                  }`}
               >
                 {f === "nielsen" && "Nielsen Heuristics"}
                 {f === "wcag" && "WCAG 2.1"}
@@ -342,71 +452,72 @@ export default function ComparePage() {
         </div>
 
         {/* Your Site */}
-        <div className="mb-8 bg-[#121214] border border-white/5 rounded-2xl p-6">
-          <h2 className="text-2xl font-bold mb-6">Your Site</h2>
+        <div className="mb-8 bg-card border border-border-dim rounded-2xl p-6 shadow-sm">
+          <h2 className="text-2xl font-bold mb-6 text-foreground">Your Site</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <input
               type="text"
               placeholder="Enter your website URL"
               value={yourSite.url || ""}
               onChange={(e) => setYourSite({ ...yourSite, url: e.target.value })}
-              className="px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-indigo-500"
+              className="px-4 py-3 bg-background border border-border-dim rounded-xl text-foreground focus:outline-none focus:border-accent-primary transition-colors"
             />
             <div>
-              <label className="block text-sm text-slate-400 mb-2">Or upload screenshot</label>
+              <label className="block text-sm text-muted-text mb-2">Or upload screenshot</label>
               <input
                 type="file"
                 accept="image/*"
                 onChange={(e) =>
                   setYourSite({ ...yourSite, file: e.target.files?.[0] })
                 }
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-indigo-500"
+                className="w-full px-4 py-3 bg-background border border-border-dim rounded-xl text-foreground focus:outline-none focus:border-accent-primary transition-colors"
               />
             </div>
           </div>
         </div>
 
         {/* Competitors */}
-        <div className="mb-8 bg-[#121214] border border-white/5 rounded-2xl p-6">
+        <div className="mb-8 bg-card border border-border-dim rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold">Competitors</h2>
+            <h2 className="text-2xl font-bold text-foreground">Competitors</h2>
             <button
               onClick={addCompetitor}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-accent-primary hover:opacity-90 text-white rounded-lg font-bold transition-all text-sm shadow-md shadow-accent-primary/20"
             >
               <Plus className="w-4 h-4" />
-              Add Competitor
+              Add
             </button>
           </div>
 
           {competitors.length === 0 ? (
-            <p className="text-slate-400 text-center py-8">No competitors added yet. Click "Add Competitor" to get started.</p>
+            <p className="text-muted-text text-center py-8 bg-foreground/[0.02] border border-dashed border-border-dim rounded-xl">No competitors added yet. Click "Add Competitor" to get started.</p>
           ) : (
             <div className="space-y-4">
               {competitors.map((comp) => (
                 <div
                   key={comp.id}
-                  className="flex items-center gap-4 p-4 bg-white/5 border border-white/10 rounded-lg"
+                  className="flex flex-col md:flex-row items-stretch md:items-center gap-4 p-4 bg-background border border-border-dim rounded-xl transition-all duration-300 hover:border-accent-primary/30"
                 >
                   <input
                     type="text"
                     placeholder="Company name"
                     value={comp.name}
                     onChange={(e) => updateCompetitor(comp.id, { name: e.target.value })}
-                    className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-indigo-500"
+                    className="flex-1 px-3 py-2 bg-foreground/[0.03] border border-border-dim rounded-lg text-foreground focus:outline-none focus:border-accent-primary text-sm"
                   />
                   <input
                     type="text"
                     placeholder="Competitor URL"
                     value={comp.url || ""}
                     onChange={(e) => updateCompetitor(comp.id, { url: e.target.value })}
-                    className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-indigo-500"
+                    className="flex-1 px-3 py-2 bg-foreground/[0.03] border border-border-dim rounded-lg text-foreground focus:outline-none focus:border-accent-primary text-sm"
                   />
                   <button
                     onClick={() => removeCompetitor(comp.id)}
-                    className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                    className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors flex items-center justify-center shrink-0"
                   >
                     <Trash2 className="w-5 h-5" />
+                    <span className="md:hidden ml-2 font-bold text-sm">Remove</span>
                   </button>
                 </div>
               ))}
@@ -419,7 +530,7 @@ export default function ComparePage() {
           <button
             onClick={runComparison}
             disabled={comparing}
-            className="w-full px-6 py-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 rounded-lg font-bold text-lg disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+            className="group w-full px-6 py-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 rounded-lg font-bold text-lg disabled:opacity-50 flex items-center justify-center gap-2 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/30"
           >
             {comparing ? (
               <>
@@ -434,105 +545,108 @@ export default function ComparePage() {
 
         {/* Results */}
         {yourSite.analysis && competitors.some((c) => c.analysis) && (
-          <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 overflow-x-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">Comparison Results</h2>
+          <div className="bg-card border border-border-dim rounded-2xl p-6 overflow-x-auto shadow-xl">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl font-bold text-foreground">Comparison Results</h2>
               <button
                 onClick={exportPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold transition-colors"
+                className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-600/20"
               >
                 <Download className="w-4 h-4" />
-                Export PDF
+                Export Benchmark Report
               </button>
             </div>
 
             {/* Summary Table */}
             <div className="mb-12">
-              <h3 className="text-lg font-bold mb-4 text-slate-300">Summary Comparison</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px]">
+              <h3 className="text-lg font-bold mb-6 text-muted-text flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-accent-primary" />
+                Metric Breakdown
+              </h3>
+              <div className="overflow-x-auto rounded-xl border border-border-dim">
+                <table className="w-full min-w-[600px] border-collapse">
                   <thead>
-                    <tr className="border-b-2 border-indigo-500/30">
-                      <th className="text-left py-4 px-4 font-bold text-slate-300">Metric</th>
-                      <th className="text-center py-4 px-4 font-bold text-white">{yourSite.name}</th>
+                    <tr className="bg-foreground/[0.03]">
+                      <th className="text-left py-4 px-6 font-bold text-muted-text border-b border-border-dim">Benchmark Metric</th>
+                      <th className="text-center py-4 px-6 font-bold text-foreground border-b border-border-dim bg-accent-primary/5">{yourSite.name}</th>
                       {competitors.map((comp) => (
-                        <th key={comp.id} className="text-center py-4 px-4 font-bold text-white">
+                        <th key={comp.id} className="text-center py-4 px-6 font-bold text-foreground border-b border-border-dim">
                           {comp.name}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b border-white/10 bg-amber-500/5">
-                      <td className="py-4 px-4 font-bold text-amber-300">📊 Total Issues</td>
-                      <td className="text-center py-4 px-4">
-                        <span className="text-2xl font-bold text-amber-400">
+                    <tr className="border-b border-border-dim hover:bg-foreground/[0.01] transition-colors">
+                      <td className="py-4 px-6 font-bold text-amber-600 dark:text-amber-400">📊 Total Issues</td>
+                      <td className="text-center py-4 px-6 bg-accent-primary/[0.02]">
+                        <span className="text-2xl font-black text-amber-500">
                           {calculateMetrics(yourSite.analysis).total}
                         </span>
                       </td>
                       {competitors.map((comp) => (
-                        <td key={comp.id} className="text-center py-4 px-4">
-                          <span className="text-2xl font-bold text-amber-400">
+                        <td key={comp.id} className="text-center py-4 px-6">
+                          <span className="text-2xl font-black text-amber-500">
                             {calculateMetrics(comp.analysis).total}
                           </span>
                         </td>
                       ))}
                     </tr>
-                    <tr className="border-b border-white/10 bg-red-500/5">
-                      <td className="py-4 px-4 font-bold text-red-300">🔴 Critical Severity</td>
-                      <td className="text-center py-4 px-4">
-                        <span className="text-xl font-bold text-red-400">
+                    <tr className="border-b border-border-dim hover:bg-foreground/[0.01] transition-colors">
+                      <td className="py-4 px-6 font-bold text-red-600 dark:text-red-400">🔴 Critical Severity</td>
+                      <td className="text-center py-4 px-6 bg-accent-primary/[0.02]">
+                        <span className="text-xl font-bold text-red-500">
                           {calculateMetrics(yourSite.analysis).critical}
                         </span>
                       </td>
                       {competitors.map((comp) => (
-                        <td key={comp.id} className="text-center py-4 px-4">
-                          <span className="text-xl font-bold text-red-400">
+                        <td key={comp.id} className="text-center py-4 px-6">
+                          <span className="text-xl font-bold text-red-500">
                             {calculateMetrics(comp.analysis).critical}
                           </span>
                         </td>
                       ))}
                     </tr>
-                    <tr className="border-b border-white/10 bg-orange-500/5">
-                      <td className="py-4 px-4 font-bold text-orange-300">🟠 High Severity</td>
-                      <td className="text-center py-4 px-4">
-                        <span className="text-xl font-bold text-orange-400">
+                    <tr className="border-b border-border-dim hover:bg-foreground/[0.01] transition-colors">
+                      <td className="py-4 px-6 font-bold text-orange-600 dark:text-orange-400">🟠 High Severity</td>
+                      <td className="text-center py-4 px-6 bg-accent-primary/[0.02]">
+                        <span className="text-xl font-bold text-orange-500">
                           {calculateMetrics(yourSite.analysis).high}
                         </span>
                       </td>
                       {competitors.map((comp) => (
-                        <td key={comp.id} className="text-center py-4 px-4">
-                          <span className="text-xl font-bold text-orange-400">
+                        <td key={comp.id} className="text-center py-4 px-6">
+                          <span className="text-xl font-bold text-orange-500">
                             {calculateMetrics(comp.analysis).high}
                           </span>
                         </td>
                       ))}
                     </tr>
-                    <tr className="border-b border-white/10 bg-yellow-500/5">
-                      <td className="py-4 px-4 font-bold text-yellow-300">🟡 Medium Severity</td>
-                      <td className="text-center py-4 px-4">
-                        <span className="text-xl font-bold text-yellow-400">
+                    <tr className="border-b border-border-dim hover:bg-foreground/[0.01] transition-colors">
+                      <td className="py-4 px-6 font-bold text-yellow-600 dark:text-yellow-400">🟡 Medium Severity</td>
+                      <td className="text-center py-4 px-6 bg-accent-primary/[0.02]">
+                        <span className="text-xl font-bold text-yellow-500">
                           {calculateMetrics(yourSite.analysis).medium}
                         </span>
                       </td>
                       {competitors.map((comp) => (
-                        <td key={comp.id} className="text-center py-4 px-4">
-                          <span className="text-xl font-bold text-yellow-400">
+                        <td key={comp.id} className="text-center py-4 px-6">
+                          <span className="text-xl font-bold text-yellow-500">
                             {calculateMetrics(comp.analysis).medium}
                           </span>
                         </td>
                       ))}
                     </tr>
-                    <tr className="border-b border-white/10 bg-green-500/5">
-                      <td className="py-4 px-4 font-bold text-green-300">🟢 Low Severity</td>
-                      <td className="text-center py-4 px-4">
-                        <span className="text-xl font-bold text-green-400">
+                    <tr className="hover:bg-foreground/[0.01] transition-colors">
+                      <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400">🟢 Low Severity</td>
+                      <td className="text-center py-4 px-6 bg-accent-primary/[0.02]">
+                        <span className="text-xl font-bold text-emerald-500">
                           {calculateMetrics(yourSite.analysis).low}
                         </span>
                       </td>
                       {competitors.map((comp) => (
-                        <td key={comp.id} className="text-center py-4 px-4">
-                          <span className="text-xl font-bold text-green-400">
+                        <td key={comp.id} className="text-center py-4 px-6">
+                          <span className="text-xl font-bold text-emerald-500">
                             {calculateMetrics(comp.analysis).low}
                           </span>
                         </td>
@@ -544,12 +658,12 @@ export default function ComparePage() {
             </div>
 
             {/* Competitive Position */}
-            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-6 mb-12">
-              <h3 className="text-xl font-bold mb-4">Competitive Position</h3>
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <p className="text-slate-400 mb-2">Best Performance (Fewest Issues)</p>
-                  <p className="text-2xl font-bold text-emerald-400">
+            <div className="bg-accent-primary/5 border border-accent-primary/10 rounded-2xl p-8 mb-12 shadow-inner">
+              <h3 className="text-xl font-bold mb-6 text-foreground">Competitive Landscape</h3>
+              <div className="grid md:grid-cols-2 gap-8">
+                <div className="bg-card border border-border-dim rounded-xl p-6 shadow-sm">
+                  <p className="text-muted-text text-sm font-bold mb-3 uppercase tracking-wider">Top Performer</p>
+                  <p className="text-3xl font-black text-emerald-500">
                     {(() => {
                       const all = [
                         {
@@ -566,10 +680,11 @@ export default function ComparePage() {
                       ).name;
                     })()}
                   </p>
+                  <p className="text-xs text-muted-text mt-2">Fewest total UX issues detected.</p>
                 </div>
-                <div>
-                  <p className="text-slate-400 mb-2">Highest Risk (Most Critical Issues)</p>
-                  <p className="text-2xl font-bold text-red-400">
+                <div className="bg-card border border-border-dim rounded-xl p-6 shadow-sm">
+                  <p className="text-muted-text text-sm font-bold mb-3 uppercase tracking-wider">Highest Risk Area</p>
+                  <p className="text-3xl font-black text-red-500">
                     {(() => {
                       const all = [
                         {
@@ -586,24 +701,28 @@ export default function ComparePage() {
                       ).name;
                     })()}
                   </p>
+                  <p className="text-xs text-muted-text mt-2">Most critical severity issues found.</p>
                 </div>
               </div>
             </div>
 
             {/* Detailed Issues */}
             <div className="mt-12">
-              <h3 className="text-2xl font-bold mb-8 text-white">📋 Detailed Findings by Site</h3>
+              <h3 className="text-2xl font-bold mb-8 text-foreground flex items-center gap-3">
+                <Zap className="w-6 h-6 text-accent-primary" />
+                Detailed Findings by Site
+              </h3>
               <div className="space-y-12">
                 {[
                   { name: yourSite.name, analysis: yourSite.analysis },
                   ...competitors.map((c) => ({ name: c.name, analysis: c.analysis })),
                 ].map((site, idx) => (
-                  <div key={idx} className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-xl p-8">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-3 h-12 bg-indigo-500 rounded-full"></div>
-                      <h4 className="text-2xl font-bold text-white">{site.name}</h4>
+                  <div key={idx} className="bg-foreground/[0.02] border border-border-dim rounded-2xl p-4 md:p-8 hover:bg-foreground/[0.03] transition-colors shadow-sm">
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className="w-2 md:w-3 h-8 md:h-10 bg-accent-primary rounded-full shadow-[0_0_15px_rgba(99,102,241,0.3)]"></div>
+                      <h4 className="text-xl md:text-3xl font-black text-foreground">{site.name}</h4>
                     </div>
-                    
+
                     {/* Severity Summary Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                       <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
@@ -634,70 +753,71 @@ export default function ComparePage() {
 
                     {/* Issues List */}
                     {site.analysis?.audit && site.analysis.audit.length > 0 ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h5 className="text-lg font-bold text-white">Issues Found ({site.analysis.audit.length})</h5>
-                          <p className="text-xs text-slate-400">Showing all issues</p>
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between mb-4 px-2">
+                          <h5 className="text-lg font-bold text-foreground">Discovered Issues ({site.analysis.audit.length})</h5>
+                          <p className="text-xs text-muted-text font-medium">All severity levels</p>
                         </div>
-                        {site.analysis.audit.map((issue: any, issueIdx: number) => (
-                          <div
-                            key={issueIdx}
-                            className="bg-[#0a0a0a] border border-white/10 rounded-lg p-6 hover:border-indigo-500/50 transition-all"
-                          >
-                            <div className="flex items-start gap-4">
-                              {/* Issue Number Badge */}
-                              <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                                {issueIdx + 1}
-                              </div>
-                              
-                              <div className="flex-1 min-w-0">
-                                {/* Issue Title */}
-                                <div className="flex items-start justify-between gap-4 mb-3">
-                                  <h6 className="text-lg font-bold text-white leading-tight">
-                                    {issue.issue || "Issue description not available"}
-                                  </h6>
-                                  <span
-                                    className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap flex-shrink-0 ${
-                                      issue.severity === "critical"
-                                        ? "bg-red-500 text-white"
+                        <div className="grid gap-4">
+                          {site.analysis.audit.map((issue: any, issueIdx: number) => (
+                            <div
+                              key={issueIdx}
+                              className="bg-card border border-border-dim rounded-xl p-6 hover:border-accent-primary/30 transition-all shadow-sm group/card"
+                            >
+                              <div className="flex items-start gap-4">
+                                {/* Issue Number Badge */}
+                                <div className="flex-shrink-0 w-8 h-8 bg-foreground/5 border border-border-dim rounded-full flex items-center justify-center text-muted-text font-black text-sm group-hover/card:bg-accent-primary group-hover/card:text-white group-hover/card:border-accent-primary transition-all">
+                                  {issueIdx + 1}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  {/* Issue Title */}
+                                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-4">
+                                    <h6 className="text-base md:text-xl font-bold text-foreground leading-tight tracking-tight">
+                                      {issue.issue || "Issue description not available"}
+                                    </h6>
+                                    <span
+                                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex-shrink-0 shadow-lg ${issue.severity === "critical"
+                                        ? "bg-red-500 text-white shadow-red-500/20"
                                         : issue.severity === "high"
-                                        ? "bg-orange-500 text-white"
-                                        : issue.severity === "medium"
-                                        ? "bg-yellow-500 text-black"
-                                        : "bg-green-500 text-white"
-                                    }`}
-                                  >
-                                    {issue.severity?.toUpperCase() || "UNKNOWN"}
-                                  </span>
-                                </div>
-
-                                {/* Solution */}
-                                <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-lg p-4 mb-3">
-                                  <p className="text-xs font-bold text-indigo-300 mb-2">💡 RECOMMENDED SOLUTION</p>
-                                  <p className="text-sm text-slate-300 leading-relaxed">
-                                    {issue.solution || "Solution not available"}
-                                  </p>
-                                </div>
-
-                                {/* Category Badge */}
-                                {issue.category && (
-                                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full">
-                                    <span className="w-2 h-2 bg-indigo-400 rounded-full"></span>
-                                    <span className="text-xs text-slate-400 font-medium">
-                                      {issue.category}
+                                          ? "bg-orange-500 text-white shadow-orange-500/20"
+                                          : issue.severity === "medium"
+                                            ? "bg-yellow-500 text-black shadow-yellow-500/20"
+                                            : "bg-accent-primary text-white shadow-accent-primary/20"
+                                        }`}
+                                    >
+                                      {issue.severity || "UNKNOWN"}
                                     </span>
                                   </div>
-                                )}
+
+                                  {/* Solution */}
+                                  <div className="bg-accent-primary/5 border border-accent-primary/10 rounded-xl p-4 mb-4">
+                                    <p className="text-[10px] font-black text-accent-primary mb-2 tracking-widest uppercase flex items-center gap-1.5"><Lightbulb className="w-3 h-3" /> Recommended Fix</p>
+                                    <p className="text-sm text-foreground/80 leading-relaxed font-medium">
+                                      {issue.solution || "Solution not available"}
+                                    </p>
+                                  </div>
+
+                                  {/* Category Badge */}
+                                  {issue.category && (
+                                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-foreground/[0.03] border border-border-dim rounded-full">
+                                      <span className="w-1.5 h-1.5 bg-accent-primary rounded-full animate-pulse"></span>
+                                      <span className="text-[10px] text-muted-text font-black uppercase tracking-wider">
+                                        {issue.category}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     ) : (
-                      <div className="text-center py-12 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
-                        <div className="text-6xl mb-4">✅</div>
-                        <p className="text-xl font-bold text-emerald-400 mb-2">No Issues Found!</p>
-                        <p className="text-slate-400">This site appears to be following best practices.</p>
+                      <div className="text-center py-16 bg-emerald-500/5 border border-dashed border-emerald-500/20 rounded-2xl">
+                        <div className="text-5xl mb-4">🤘</div>
+                        <p className="text-xl font-black text-emerald-500 mb-1 uppercase tracking-tight">Zero Issues Found</p>
+                        <p className="text-muted-text font-medium text-sm">Target site follows all tested heuristics.</p>
                       </div>
                     )}
                   </div>

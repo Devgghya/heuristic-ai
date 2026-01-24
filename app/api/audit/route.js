@@ -3,6 +3,7 @@ import { put } from "@vercel/blob";
 import { sql } from "@vercel/postgres";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { cookies } from "next/headers";
 
 // Ensure Node.js runtime for Buffer and database libraries
 export const runtime = "nodejs";
@@ -11,10 +12,81 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
+const FREE_AUDIT_LIMIT = 2;            // Free-tier monthly audits
+const FREE_MAX_TOKENS = 2000;          // Token cap per audit for free/guest users
+const PRO_MAX_TOKENS = 4000;           // Token cap per audit for Pro users
+
+const currentPeriodKey = () => new Date().toISOString().slice(0, 7); // YYYY-MM
+
+async function getUsageForUser(userId) {
+  const periodKey = currentPeriodKey();
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_usage (
+      user_id VARCHAR(255) PRIMARY KEY,
+      plan VARCHAR(20) DEFAULT 'free',
+      audits_used INTEGER DEFAULT 0,
+      period_key VARCHAR(7) NOT NULL,
+      token_limit INTEGER DEFAULT 2000,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  const { rows } = await sql`
+    SELECT plan, audits_used, period_key
+    FROM user_usage
+    WHERE user_id = ${userId}
+  `;
+
+  if (rows.length === 0) {
+    await sql`
+      INSERT INTO user_usage (user_id, plan, audits_used, period_key, token_limit)
+      VALUES (${userId}, 'free', 0, ${periodKey}, ${FREE_MAX_TOKENS})
+    `;
+    return { plan: "free", auditsUsed: 0, periodKey, tokenLimit: FREE_MAX_TOKENS };
+  }
+
+  const row = rows[0];
+  let auditsUsed = row.audits_used || 0;
+  let storedPeriodKey = row.period_key;
+
+  if (storedPeriodKey !== periodKey) {
+    await sql`
+      UPDATE user_usage
+      SET audits_used = 0, period_key = ${periodKey}, updated_at = NOW()
+      WHERE user_id = ${userId}
+    `;
+    auditsUsed = 0;
+    storedPeriodKey = periodKey;
+  }
+
+  const plan = row.plan === "pro" ? "pro" : "free";
+  const tokenLimit = plan === "pro" ? PRO_MAX_TOKENS : FREE_MAX_TOKENS;
+
+  return { plan, auditsUsed, periodKey: storedPeriodKey, tokenLimit };
+}
+
 export async function POST(req) {
   try {
-    const { userId } = await auth(); // Get User ID (might be null if Guest)
-    
+    const { userId } = await auth();
+    const cookieStore = cookies();
+    const periodKey = currentPeriodKey();
+
+    // Determine plan and remaining usage
+    let usage = { plan: "guest", auditsUsed: 0, tokenLimit: FREE_MAX_TOKENS };
+    if (userId) {
+      usage = await getUsageForUser(userId);
+    } else {
+      const guestCount = parseInt(cookieStore.get("guest_audit_count")?.value || "0", 10) || 0;
+      usage = { plan: "guest", auditsUsed: guestCount, tokenLimit: FREE_MAX_TOKENS };
+    }
+
+    const limit = usage.plan === "pro" ? Infinity : FREE_AUDIT_LIMIT;
+    if (usage.auditsUsed >= limit) {
+      return NextResponse.json(
+        { error: "Free plan limit reached. Upgrade to continue.", error_code: "PLAN_LIMIT", plan: usage.plan, limit: FREE_AUDIT_LIMIT, audits_used: usage.auditsUsed },
+        { status: 402 }
+      );
+    }
+
     const formData = await req.formData();
     const files = formData.getAll("file");
     const framework = formData.get("framework") || "nielsen";
@@ -31,113 +103,113 @@ export async function POST(req) {
       // Helper to capture a single URL
       // Check if URL starts with http
       const normalizeUrl = (u) => {
-          if (!u.startsWith("http")) return "https://" + u;
-          return u;
+        if (!u.startsWith("http")) return "https://" + u;
+        return u;
       }
       const targetUrl = normalizeUrl(url);
 
       const captureScreenshot = async (tUrl) => {
-         // Reduced resolution to 1024x768 to prevent payload bloat
-         const sUrl = `https://s0.wp.com/mshots/v1/${encodeURIComponent(tUrl)}?w=1024&h=768`;
-         let attempts = 0;
-         while(attempts < 5) {
-            if (attempts > 0) await new Promise(r => setTimeout(r, 2000));
-            try {
-               const res = await fetch(sUrl);
-               const ab = await res.arrayBuffer();
-               if (ab.byteLength > 6000) {
-                  return { base64: Buffer.from(ab).toString("base64"), mimeType: "image/jpeg", publicUrl: sUrl };
-               }
-            } catch(e) {}
-            attempts++;
-         }
-         return null;
+        // Reduced resolution to 1024x768 to prevent payload bloat
+        const sUrl = `https://s0.wp.com/mshots/v1/${encodeURIComponent(tUrl)}?w=1024&h=768`;
+        let attempts = 0;
+        while (attempts < 5) {
+          if (attempts > 0) await new Promise(r => setTimeout(r, 2000));
+          try {
+            const res = await fetch(sUrl);
+            const ab = await res.arrayBuffer();
+            if (ab.byteLength > 6000) {
+              return { base64: Buffer.from(ab).toString("base64"), mimeType: "image/jpeg", publicUrl: sUrl };
+            }
+          } catch (e) { }
+          attempts++;
+        }
+        return null;
       };
 
       if (url) {
-         images.push(await captureScreenshot(targetUrl)); // Always get main URL
+        images.push(await captureScreenshot(targetUrl)); // Always get main URL
       }
-      
+
       if (images[0] === null) return NextResponse.json({ error: "Failed to capture main URL", error_code: "SCREENSHOT_FAILED" }, { status: 500 });
-      
+
       // Update global vars for single image compat check later
       base64 = images[0].base64;
       mimeType = images[0].mimeType;
       publicImageUrl = images[0].publicUrl;
     } else if (mode === "crawler" && url) {
-        // CRAWLER MODE
-        // 1. Fetch HTML to find links
-        try {
-           const normalizeUrl = (u) => {
-               if (!u.startsWith("http")) return "https://" + u;
-               return u;
-           }
-           const targetUrl = normalizeUrl(url);
-
-           const htmlRes = await fetch(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (AuditBot/1.0)' }});
-           const html = await htmlRes.text();
-           
-           // 2. Extract Internal Links
-           const baseDomain = new URL(targetUrl).hostname;
-           const links = new Set();
-           const regex = /href=["']((?:https?:\/\/[^"']+|(?:\/[^"']*)))["']/g;
-           let match;
-           while ((match = regex.exec(html)) !== null) {
-               try {
-                   const absoluteUrl = new URL(match[1], targetUrl).href;
-                   // Filter: Internal only, not the same as root, no fragments
-                   if (new URL(absoluteUrl).hostname === baseDomain && absoluteUrl !== targetUrl && !absoluteUrl.includes("#")) {
-                       links.add(absoluteUrl);
-                   }
-               } catch (e) {}
-           }
-           
-           // 3. Select Top 3 Links (Prioritize common pages)
-           const priorityWords = ['pricing', 'about', 'features', 'contact', 'login', 'signup'];
-           const sortedLinks = Array.from(links).sort((a, b) => {
-               const aScore = priorityWords.some(w => a.toLowerCase().includes(w)) ? 1 : 0;
-               const bScore = priorityWords.some(w => b.toLowerCase().includes(w)) ? 1 : 0;
-               return bScore - aScore;
-           });
-           // Limit to Root + 2 subpages (Max 3 total) to stay within AI limits
-           const targets = [targetUrl, ...sortedLinks.slice(0, 2)]; 
-
-           // 4. Batch Screenshot
-           const capture = async (tUrl) => {
-                const sUrl = `https://s0.wp.com/mshots/v1/${encodeURIComponent(tUrl)}?w=1024&h=768`;
-                 // Shorter retry for crawler to avoid timeout
-                let attempts = 0;
-                while(attempts < 4) {
-                   if (attempts > 0) await new Promise(r => setTimeout(r, 2500));
-                   try {
-                      const res = await fetch(sUrl);
-                      const ab = await res.arrayBuffer();
-                      if (ab.byteLength > 6000) {
-                         return { base64: Buffer.from(ab).toString("base64"), mimeType: "image/jpeg", publicUrl: sUrl };
-                      }
-                   } catch(e) {}
-                   attempts++;
-                }
-                return null;
-           };
-           
-           // Parallel execution
-           const results = await Promise.all(targets.map(t => capture(t)));
-           const validResults = results.filter(r => r !== null);
-           
-           if (validResults.length === 0) return NextResponse.json({ error: "Failed to crawl site", error_code: "CRAWL_FAILED" }, { status: 500 });
-           
-           validResults.forEach(img => images.push(img));
-           
-           // Set primaries for compatibility
-           base64 = images[0].base64;
-           mimeType = images[0].mimeType;
-           publicImageUrl = images[0].publicUrl;
-
-        } catch (e) {
-             console.error("Crawl error:", e);
-             return NextResponse.json({ error: "Failed to access site URL: " + e.message, error_code: "FETCH_FAILED" }, { status: 400 });
+      // CRAWLER MODE
+      // 1. Fetch HTML to find links
+      try {
+        const normalizeUrl = (u) => {
+          if (!u.startsWith("http")) return "https://" + u;
+          return u;
         }
+        const targetUrl = normalizeUrl(url);
+
+        const htmlRes = await fetch(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (AuditBot/1.0)' } });
+        const html = await htmlRes.text();
+
+        // 2. Extract Internal Links
+        const baseDomain = new URL(targetUrl).hostname;
+        const links = new Set();
+        const regex = /href=["']((?:https?:\/\/[^"']+|(?:\/[^"']*)))["']/g;
+        let match;
+        while ((match = regex.exec(html)) !== null) {
+          try {
+            const absoluteUrl = new URL(match[1], targetUrl).href;
+            // Filter: Internal only, not the same as root, no fragments
+            if (new URL(absoluteUrl).hostname === baseDomain && absoluteUrl !== targetUrl && !absoluteUrl.includes("#")) {
+              links.add(absoluteUrl);
+            }
+          } catch (e) { }
+        }
+
+        // 3. Select Top 3 Links (Prioritize common pages)
+        const priorityWords = ['pricing', 'about', 'features', 'contact', 'login', 'signup'];
+        const sortedLinks = Array.from(links).sort((a, b) => {
+          const aScore = priorityWords.some(w => a.toLowerCase().includes(w)) ? 1 : 0;
+          const bScore = priorityWords.some(w => b.toLowerCase().includes(w)) ? 1 : 0;
+          return bScore - aScore;
+        });
+        // Limit to Root + 2 subpages (Max 3 total) to stay within AI limits
+        const targets = [targetUrl, ...sortedLinks.slice(0, 2)];
+
+        // 4. Batch Screenshot
+        const capture = async (tUrl) => {
+          const sUrl = `https://s0.wp.com/mshots/v1/${encodeURIComponent(tUrl)}?w=1024&h=768`;
+          // Shorter retry for crawler to avoid timeout
+          let attempts = 0;
+          while (attempts < 4) {
+            if (attempts > 0) await new Promise(r => setTimeout(r, 2500));
+            try {
+              const res = await fetch(sUrl);
+              const ab = await res.arrayBuffer();
+              if (ab.byteLength > 6000) {
+                return { base64: Buffer.from(ab).toString("base64"), mimeType: "image/jpeg", publicUrl: sUrl };
+              }
+            } catch (e) { }
+            attempts++;
+          }
+          return null;
+        };
+
+        // Parallel execution
+        const results = await Promise.all(targets.map(t => capture(t)));
+        const validResults = results.filter(r => r !== null);
+
+        if (validResults.length === 0) return NextResponse.json({ error: "Failed to crawl site", error_code: "CRAWL_FAILED" }, { status: 500 });
+
+        validResults.forEach(img => images.push(img));
+
+        // Set primaries for compatibility
+        base64 = images[0].base64;
+        mimeType = images[0].mimeType;
+        publicImageUrl = images[0].publicUrl;
+
+      } catch (e) {
+        console.error("Crawl error:", e);
+        return NextResponse.json({ error: "Failed to access site URL: " + e.message, error_code: "FETCH_FAILED" }, { status: 400 });
+      }
 
     } else if (files && files.length > 0) {
       // Handle File Upload
@@ -151,7 +223,7 @@ export async function POST(req) {
           try {
             const blob = await put(fileObj.name, fileObj, { access: 'public' });
             blobUrl = blob.url;
-          } catch {}
+          } catch { }
         }
         images.push({ base64: b64, mimeType: mt, publicUrl: blobUrl });
       }
@@ -173,93 +245,68 @@ export async function POST(req) {
       return NextResponse.json({ error: "Invalid input image or URL", error_code: "INVALID_INPUT" }, { status: 400 });
     }
     const prompt = `
-      You are a Lead UX Auditor conducting an official heuristic evaluation of ${mode === 'crawler' ? 'a multi-page website scan' : (mode === 'url' ? 'a live website homepage' : 'UI screenshots')}.
+      You are a World-Class UX Consultant & Information Designer. 
+      Your job is NOT just to find errors, but to provide a data-driven, visually-oriented strategic audit that could be presented to a Fortune 500 CEO.
+      
+      CONTEXT:
+      You are auditing ${mode === 'crawler' ? 'a multi-page website scan' : (mode === 'url' ? 'a live website homepage' : 'UI screenshots')} using the **${framework}** framework.
       ${mode === 'accessibility' ? `
-      SPECIAL MODE: ACCESSIBILITY PERSONA TESTING
-      Your task is to audit this interface exclusively through the lens of WCAG 2.1 AA/AAA standards, simulating the experience of disabled users.
+      SPECIAL MODE: ACCESSIBILITY PERSONA TESTING (WCAG 2.1 AA/AAA)
+      Simulate:
+      1. Maria (Low Vision, 200% Zoom)
+      2. Ali (Screen Reader)
+      3. Sam (Motor Impairment, Keyboard Only)
+      ` : ''}
+
+      OBJECTIVE:
+      Generate a "Crazy Good" analysis that powers a high-end dashboard with charts, gauges, and heatmaps.
       
-      REQUIRED PERSONAS (Simulate these specific user flows):
-      1. **Low Vision User (Maria)**: Uses 200% zoom. Needs high contrast (4.5:1 min) and clear visual hierarchy. Cannot rely on color alone.
-      2. **Screen Reader User (Ali)**: Cannot see the screen. Relies on logical reading order, headings, and inferred ARIA roles. (Deduce semantic structure from visual layout).
-      3. **Motor Impairment (Sam)**: Uses keyboard only. Needs large clickable targets (min 44x44px) and clear focus indicators. Cannot perform complex drag/dro or hover-only actions.
-      ` : `Your task is to produce a critical, professional audit report based STRICTLY on the **${framework}** framework.`}
+      YOU MUST RETURN JSON ONLY. NO MARKDOWN.
       
-      CRITICAL INSTRUCTIONS:
-      1. **Framework Adherence**: Every issue must directly violate a specific principle of **${framework}**. Cite the principle if possible.
-      2. **Professional Tone**: Write in a formal, objective tone suitable for a boardroom presentation. Avoid casual language.
-      3. **Visual Evidence**: You must analyze specific pixels (buttons, text, white space). Do not hallucinate features. If you can't see it, don't report it.
-      4. **Detailed Findings**: "Make the logo bigger" is bad. "The 24px logo lacks sufficient whitespace (4px) relative to the header height (80px), violating hierarchy principles" is good.
-      
-      JSON Schema (MUST follow exactly):
+      JSON SCHEMA:
       {
+        "score": 85, // Integer 0-100. Overall UX Score.
+        "summary_title": "Executive Headline (e.g., 'Strong Visuals but Weak Accessibility')",
+        "summary_text": "A 2-3 sentence high-level executive summary.",
+        "ux_metrics": {
+           "clarity": 8, // 0-10 rating
+           "efficiency": 7, // 0-10 rating
+           "consistency": 9, // 0-10 rating
+           "aesthetics": 6, // 0-10 rating
+           "accessibility": 5 // 0-10 rating
+        },
+        "key_strengths": ["Strength 1", "Strength 2", "Strength 3"],
+        "key_weaknesses": ["Weakness 1", "Weakness 2", "Weakness 3"],
         "images": [
           {
             "index": 0,
-            "ui_title": "Professional descriptive title (e.g., 'Primary Landing Page', 'User Dashboard')",
+            "ui_title": "Section Name",
             "audit": [
               {
-                "title": "Concise, professional issue title (e.g., 'Violation of Consistency caused by mismatched button styles')",
-                "issue": "Detailed analysis. Describe the visual element, explain WHY it fails the ${framework} heuristic, and the impact on the user.",
-                "solution": "Professional recommendation. Specify exact changes (hex codes, pixel values, layout shifts) to align with standards.",
+                "title": "Issue Title",
+                "issue": "Description of the problem.",
+                "solution": "Specific, actionable fix.",
                 "severity": "critical" | "high" | "medium" | "low",
-                "category": "Navigation" | "Typography" | "Accessibility" | "Layout" | "Color" | "Consistency" | "Hierarchy" | "Visual Feedback" | "Error Prevention" | "User Control"
+                "category": "Layout" | "Color" | "Typography" | "Navigation" | "Accessibility"
               }
             ]
           }
-        ],
-        "summary": {
-          "ui_title": "Executive Summary",
-          "audit": [
-            {
-              "title": "Major Strategic Concern",
-              "issue": "Synthesis of the most critical structural or systemic failure found across the interface.",
-              "solution": "High-level strategic recommendation.",
-              "severity": "critical" | "high" | "medium" | "low",
-              "category": "Relevant category"
-            }
-          ]
-        }
-      }
-
-      Example Output (Style Guide):
-      {
-        "images": [
-           {
-             "index": 0,
-             "ui_title": "Homepage Hero Section",
-             "audit": [
-               {
-                 "title": "Lack of System Visibility (Heuristic #1)",
-                 "issue": "The 'Submit' action provides no immediate visual feedback. The user is left unsure if the request was processed, violating the principle of Visibility of System Status.",
-                 "solution": "Implement a loading spinner inside the button upon click and a subsequent toast notification relative to the viewport top-right.",
-                 "severity": "high",
-                 "category": "Visual Feedback"
-               }
-             ]
-           }
-        ],
-        "summary": {
-           "ui_title": "Executive Summary",
-           "audit": [
-             {
-               "title": "Inconsistent Navigation Structure",
-               "issue": "Navigation elements shift location between views, increasing cognitive load and violating Consistency and Standards.",
-               "solution": "Standardize the global navigation bar height to 64px and lock position across all child pages.",
-               "severity": "critical",
-               "category": "Navigation"
-             }
-           ]
-        }
+        ]
       }
       
-      Analysis Requirements:
-      1. Identify at least 5-8 **distinct** visual issues.
-      2. Severity 'Critical' means the user CANNOT complete a task. 'High' means the user is significantly delayed or frustrated.
-      3. Focus on what is visible: alignment, contrast, spacing, font hierarchy, affordances (do buttons look like buttons?).
+      SCORING CRITERIA:
+      - 90-100: World Class (Apple/Stripe level)
+      - 80-89: Great, minor details missing
+      - 70-79: Good, but usability friction exists
+      - 60-69: Average, needs polish
+      - <60: Significant issues
       
-      ${mode === 'url' ? 'Context: This is a screenshot of a live URL. Evaluate the visible portion of the viewport.' : ''}
+      INSTRUCTIONS:
+      1. Be brutal but constructive.
+      2. Analyze the visual hierarchy deeply. 
+      3. For "Strategic Insights", look for patterns across the whole design.
     `;
-    
+
     let result;
     try {
       // Build messages with image support for Llama 4 Scout vision model
@@ -273,7 +320,7 @@ export async function POST(req) {
           }
         }))
       ];
-      
+
       result = await groq.chat.completions.create({
         model: GROQ_MODEL,
         messages: [
@@ -287,18 +334,18 @@ export async function POST(req) {
           }
         ],
         temperature: 0.7,
-        max_tokens: 4000
+        max_tokens: usage.tokenLimit
       });
     } catch (modelErr) {
       console.error("Groq API error:", modelErr);
       const reason = typeof modelErr?.message === "string" ? modelErr.message : "unknown";
       const status = typeof modelErr?.status === "number" ? modelErr.status : 502;
       let userMessage = status === 429 ? "AI quota exceeded. Please wait and try again." : "Model inference failed";
-      
+
       if (status === 413 || reason.includes("too large") || reason.includes("payload")) {
-          userMessage = "The analysis payload is too large. Trying scanning fewer pages.";
+        userMessage = "The analysis payload is too large. Trying scanning fewer pages.";
       }
-      
+
       return NextResponse.json({ error: userMessage, error_code: "MODEL_ERROR", error_reason: reason }, { status });
     }
 
@@ -311,53 +358,95 @@ export async function POST(req) {
       return NextResponse.json({ error: "Model returned invalid JSON" }, { status: 502 });
     }
 
-    // 3. Save to Database (ONLY IF LOGGED IN) — save each image record separately
-    if (userId && images.length > 0 && parsedData?.images) {
+    // Aggregate flat audit for backward compatibility
+    // Prioritize detailed findings from 'images' array over the 'summary'
+    const detailedAudits = Array.isArray(parsedData?.images)
+      ? parsedData.images.flatMap((g) => g.audit || [])
+      : [];
+
+    const flatAudit = detailedAudits.length > 0
+      ? detailedAudits
+      : (Array.isArray(parsedData?.summary?.audit) ? parsedData.summary.audit : []);
+
+    // BACKWARD COMPATIBILITY: Map new schema (title, issue, solution) to old schema (title, critique, fix)
+    const normalizedAudit = flatAudit.map(item => ({
+      title: item.title || item.issue?.substring(0, 50) + "..." || "Issue Detected",
+      issue: item.issue || item.critique || "No description provided",
+      solution: item.solution || item.fix || "No solution provided",
+      critique: item.issue || item.critique || "No description provided", // Old field
+      fix: item.solution || item.fix || "No solution provided",          // Old field
+      severity: item.severity || "medium",
+      category: item.category || "General"
+    }));
+
+    // 3. Save to Database (ONLY IF LOGGED IN) — save FULL analysis
+    let savedAuditId = null;
+    if (userId && images.length > 0 && parsedData) {
       try {
-        for (let i = 0; i < images.length; i++) {
-          const group = parsedData.images.find((g) => g.index === i);
-          const urlToSave = images[i].publicUrl || null;
-          if (group) {
-            await sql`
-              INSERT INTO audits (user_id, ui_title, image_url, framework, analysis)
-              VALUES (${userId}, ${group.ui_title}, ${urlToSave}, ${framework}, ${JSON.stringify(group.audit)})
-            `;
-          }
-        }
+        // Build the FULL analysis object to save
+        const fullAnalysis = {
+          score: parsedData.score || 0,
+          ux_metrics: parsedData.ux_metrics || {},
+          key_strengths: parsedData.key_strengths || [],
+          key_weaknesses: parsedData.key_weaknesses || [],
+          summary: parsedData.summary || {},
+          audit: normalizedAudit, // Use the normalized (clean) audit array
+          ui_title: parsedData?.summary?.ui_title || parsedData?.images?.[0]?.ui_title || "Untitled Scan"
+        };
+
+        // Save one record per scan (not per image) for simplicity
+        const urlToSave = images[0]?.publicUrl || publicImageUrl || null;
+        const dbResult = await sql`
+          INSERT INTO audits (user_id, ui_title, image_url, framework, analysis)
+          VALUES (${userId}, ${fullAnalysis.ui_title}, ${urlToSave}, ${framework}, ${JSON.stringify(fullAnalysis)})
+          RETURNING id
+        `;
+        savedAuditId = dbResult.rows[0]?.id;
       } catch (dbError) {
         console.error("DB Save Failed:", dbError);
         // Don't crash the request if DB fails, just return the analysis
       }
     }
 
-    // Aggregate flat audit for backward compatibility
-    // Prioritize detailed findings from 'images' array over the 'summary'
-    const detailedAudits = Array.isArray(parsedData?.images) 
-      ? parsedData.images.flatMap((g) => g.audit || []) 
-      : [];
-
-    const flatAudit = detailedAudits.length > 0 
-      ? detailedAudits 
-      : (Array.isArray(parsedData?.summary?.audit) ? parsedData.summary.audit : []);
-
-    // BACKWARD COMPATIBILITY: Map new schema (title, issue, solution) to old schema (title, critique, fix)
-    const normalizedAudit = flatAudit.map(item => ({
-       title: item.title || item.issue?.substring(0, 50) + "..." || "Issue Detected",
-       issue: item.issue || item.critique || "No description provided",
-       solution: item.solution || item.fix || "No solution provided",
-       critique: item.issue || item.critique || "No description provided", // Old field
-       fix: item.solution || item.fix || "No solution provided",          // Old field
-       severity: item.severity || "medium",
-       category: item.category || "General"
-    }));
-
-    return NextResponse.json({ 
-      success: true, 
+    // Increment usage on success
+    let response = NextResponse.json({
+      success: true,
+      id: savedAuditId,
       ui_title: parsedData?.summary?.ui_title || parsedData?.images?.[0]?.ui_title || "Untitled Scan",
       audit: normalizedAudit,
+      score: parsedData.score || 0,
+      ux_metrics: parsedData.ux_metrics || {},
+      key_strengths: parsedData.key_strengths || [], // FIXED: JSON pass-through
+      key_weaknesses: parsedData.key_weaknesses || [], // FIXED: JSON pass-through
+      summary: parsedData.summary || {},
       analysis_grouped: parsedData?.images || null,
-      image_url: publicImageUrl || null
+      image_url: publicImageUrl || null,
+      limits: {
+        plan: usage.plan,
+        audits_used: usage.auditsUsed + 1,
+        limit: usage.plan === "pro" ? null : FREE_AUDIT_LIMIT,
+        token_limit: usage.plan === "pro" ? PRO_MAX_TOKENS : FREE_MAX_TOKENS,
+        period_key: periodKey
+      }
     });
+
+    if (userId) {
+      await sql`
+        UPDATE user_usage
+        SET audits_used = audits_used + 1, updated_at = NOW()
+        WHERE user_id = ${userId}
+      `;
+    } else {
+      const newCount = usage.auditsUsed + 1;
+      response.cookies.set("guest_audit_count", newCount.toString(), {
+        httpOnly: false,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+      });
+    }
+
+    return response;
 
   } catch (error) {
     console.error("Server Error:", error);
