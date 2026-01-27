@@ -1,6 +1,7 @@
 "use client";
 
-import { SignInButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { useAuth } from "@/components/auth-provider";
+import { UserProfileButton } from "@/components/user-profile-button";
 import { Zap, LayoutDashboard, ShieldCheck, Image as ImageIcon, Rocket, Eye, GitCompare, Sparkles } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -11,6 +12,7 @@ export default function HomePage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRefsRef = useRef<(HTMLElement | null)[]>([]);
   const animationFrameRef = useRef<number | null>(null);
+  const { user, loading } = useAuth();
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -80,18 +82,17 @@ export default function HomePage() {
 
           <div className="flex items-center gap-4">
             <ThemeToggle />
-            <div>
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm transition-all shadow-lg shadow-indigo-600/20">
+            {!loading && (
+              <>
+                {!user ? (
+                  <Link href="/login" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm transition-all shadow-lg shadow-indigo-600/20">
                     Sign In
-                  </button>
-                </SignInButton>
-              </SignedOut>
-              <SignedIn>
-                <UserButton afterSignOutUrl="/" />
-              </SignedIn>
-            </div>
+                  </Link>
+                ) : (
+                  <UserProfileButton />
+                )}
+              </>
+            )}
           </div>
         </div>
 

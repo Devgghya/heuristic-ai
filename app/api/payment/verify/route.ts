@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { auth } from "@clerk/nextjs/server";
+import { getSession } from "@/lib/auth";
 import { sql } from "@vercel/postgres";
 
 export const runtime = "nodejs";
@@ -13,7 +13,8 @@ const AGENCY_MAX_TOKENS = 8000;
 
 export async function POST(req: Request) {
     try {
-        const { userId } = await auth();
+        const session = await getSession();
+        const userId = session?.id;
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
@@ -32,19 +33,21 @@ export async function POST(req: Request) {
         if (isAuthentic) {
             // Payment Verified - Update User Plan
             let targetTokenLimit = FREE_MAX_TOKENS;
-            if (planId === "lite") targetTokenLimit = LITE_MAX_TOKENS;
-            else if (planId === "plus") targetTokenLimit = PLUS_MAX_TOKENS;
+            if (planId === "plus") targetTokenLimit = PLUS_MAX_TOKENS;
             else if (planId === "pro") targetTokenLimit = PRO_MAX_TOKENS;
             else if (planId === "agency") targetTokenLimit = AGENCY_MAX_TOKENS;
 
             const current = new Date().toISOString().slice(0, 7);
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + 30); // Default to 30 days
 
             await sql`
-        INSERT INTO user_usage (user_id, plan, audits_used, period_key, token_limit)
-        VALUES (${userId}, ${planId}, 0, ${current}, ${targetTokenLimit})
+        INSERT INTO user_usage (user_id, plan, audits_used, period_key, token_limit, plan_expires_at)
+        VALUES (${userId}, ${planId}, 0, ${current}, ${targetTokenLimit}, ${expiresAt.toISOString()})
         ON CONFLICT (user_id) DO UPDATE SET
           plan = EXCLUDED.plan,
           token_limit = EXCLUDED.token_limit,
+          plan_expires_at = EXCLUDED.plan_expires_at,
           updated_at = NOW()
       `;
 

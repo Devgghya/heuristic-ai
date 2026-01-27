@@ -2,8 +2,7 @@ import Groq from "groq-sdk";
 import { put } from "@vercel/blob";
 import { sql } from "@vercel/postgres";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { cookies } from "next/headers";
+import { getSession } from "../../../lib/auth";
 
 // Ensure Node.js runtime for Buffer and database libraries
 export const runtime = "nodejs";
@@ -12,9 +11,11 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
-const FREE_AUDIT_LIMIT = 2;            // Free-tier monthly audits
+const FREE_AUDIT_LIMIT = 3;            // Free-tier logged-in user limit
+const GUEST_AUDIT_LIMIT = 1;           // Guest limit
 const FREE_MAX_TOKENS = 2000;          // Token cap per audit for free/guest users
 const PRO_MAX_TOKENS = 4000;           // Token cap per audit for Pro users
+const ULTRA_MAX_TOKENS = 8000;         // Design/Enterprise
 
 const currentPeriodKey = () => new Date().toISOString().slice(0, 7); // YYYY-MM
 
@@ -58,16 +59,18 @@ async function getUsageForUser(userId) {
     storedPeriodKey = periodKey;
   }
 
-  const plan = row.plan === "pro" ? "pro" : "free";
-  const tokenLimit = plan === "pro" ? PRO_MAX_TOKENS : FREE_MAX_TOKENS;
+  const plan = row.plan || "free";
+  let tokenLimit = FREE_MAX_TOKENS;
+  if (plan === "pro") tokenLimit = PRO_MAX_TOKENS;
+  else if (["design", "enterprise", "agency"].includes(plan)) tokenLimit = ULTRA_MAX_TOKENS;
 
   return { plan, auditsUsed, periodKey: storedPeriodKey, tokenLimit };
 }
 
 export async function POST(req) {
   try {
-    const { userId } = await auth();
-    const cookieStore = cookies();
+    const session = await getSession();
+    const userId = session?.id;
     const periodKey = currentPeriodKey();
 
     // Determine plan and remaining usage
@@ -75,14 +78,13 @@ export async function POST(req) {
     if (userId) {
       usage = await getUsageForUser(userId);
     } else {
-      const guestCount = parseInt(cookieStore.get("guest_audit_count")?.value || "0", 10) || 0;
-      usage = { plan: "guest", auditsUsed: guestCount, tokenLimit: FREE_MAX_TOKENS };
+      usage = { plan: "guest", auditsUsed: 0, tokenLimit: FREE_MAX_TOKENS };
     }
 
-    const limit = usage.plan === "pro" ? Infinity : FREE_AUDIT_LIMIT;
+    const limit = ["pro", "design", "enterprise", "agency"].includes(usage.plan) ? Infinity : (userId ? FREE_AUDIT_LIMIT : GUEST_AUDIT_LIMIT);
     if (usage.auditsUsed >= limit) {
       return NextResponse.json(
-        { error: "Free plan limit reached. Upgrade to continue.", error_code: "PLAN_LIMIT", plan: usage.plan, limit: FREE_AUDIT_LIMIT, audits_used: usage.auditsUsed },
+        { error: userId ? "Free plan limit reached. Upgrade to continue." : "Guest limit reached. Sign up for more.", error_code: "PLAN_LIMIT", plan: usage.plan, limit: limit, audits_used: usage.auditsUsed },
         { status: 402 }
       );
     }
@@ -333,8 +335,7 @@ export async function POST(req) {
             content: userMessageContent
           }
         ],
-        temperature: 0.7,
-        max_tokens: usage.tokenLimit
+        temperature: 0.7
       });
     } catch (modelErr) {
       console.error("Groq API error:", modelErr);
@@ -379,6 +380,19 @@ export async function POST(req) {
       category: item.category || "General"
     }));
 
+    // GUEST RESTRICTION: Show only 1 issue
+    let finalAudit = normalizedAudit;
+    let isTruncated = false;
+    let hiddenIssuesCount = 0;
+
+    if (!userId) {
+      if (normalizedAudit.length > 1) {
+        finalAudit = [normalizedAudit[0]];
+        isTruncated = true;
+        hiddenIssuesCount = normalizedAudit.length - 1;
+      }
+    }
+
     // 3. Save to Database (ONLY IF LOGGED IN) — save FULL analysis
     let savedAuditId = null;
     if (userId && images.length > 0 && parsedData) {
@@ -413,7 +427,7 @@ export async function POST(req) {
       success: true,
       id: savedAuditId,
       ui_title: parsedData?.summary?.ui_title || parsedData?.images?.[0]?.ui_title || "Untitled Scan",
-      audit: normalizedAudit,
+      audit: finalAudit,
       score: parsedData.score || 0,
       ux_metrics: parsedData.ux_metrics || {},
       key_strengths: parsedData.key_strengths || [], // FIXED: JSON pass-through
@@ -424,10 +438,13 @@ export async function POST(req) {
       limits: {
         plan: usage.plan,
         audits_used: usage.auditsUsed + 1,
-        limit: usage.plan === "pro" ? null : FREE_AUDIT_LIMIT,
-        token_limit: usage.plan === "pro" ? PRO_MAX_TOKENS : FREE_MAX_TOKENS,
+        limit: ["pro", "design", "enterprise", "agency"].includes(usage.plan) ? null : (userId ? FREE_AUDIT_LIMIT : GUEST_AUDIT_LIMIT),
+        token_limit: usage.tokenLimit,
         period_key: periodKey
-      }
+      },
+      guest_truncated: isTruncated,
+      hidden_issues_count: hiddenIssuesCount,
+      target_url: mode === 'url' || mode === 'crawler' || mode === 'accessibility' ? url : null
     });
 
     if (userId) {

@@ -1,30 +1,32 @@
-import { currentUser } from "@clerk/nextjs/server";
+import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "devkulshrestha27@gmail.com").split(",");
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default async function AdminLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const user = await currentUser();
+    const session = await getSession();
 
-    if (!user || !ADMIN_EMAILS.includes(user.emailAddresses[0].emailAddress)) {
+    if (!session || !session.isAdmin) {
         redirect("/dashboard");
     }
 
     return (
-        <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-indigo-500/30">
-            <nav className="border-b border-white/10 bg-[#121214]">
+        <div className="min-h-screen bg-background text-foreground font-sans selection:bg-accent-primary/30 transition-colors duration-300">
+            <nav className="border-b border-border-dim bg-card sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-bold">A</div>
+                        <div className="w-8 h-8 bg-accent-primary rounded-lg flex items-center justify-center font-bold text-white">A</div>
                         <span className="font-bold text-lg">Admin Console</span>
                     </div>
-                    <a href="/dashboard" className="text-sm text-slate-400 hover:text-white transition-colors">
-                        Back to App
-                    </a>
+                    <div className="flex items-center gap-4">
+                        <ThemeToggle />
+                        <a href="/dashboard" className="text-sm text-muted-text hover:text-foreground transition-colors">
+                            Back to App
+                        </a>
+                    </div>
                 </div>
             </nav>
             <main className="max-w-7xl mx-auto px-6 py-12">

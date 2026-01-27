@@ -10,7 +10,8 @@ import {
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { useUser, SignInButton, SignOutButton } from "@clerk/nextjs";
+import { useAuth } from "@/components/auth-provider";
+import { UserProfileButton } from "@/components/user-profile-button";
 import { PricingPlans } from "./PricingPlans";
 
 const ReportView = dynamic(() => import("./ReportView"), {
@@ -42,17 +43,18 @@ interface HistoryRecord {
 import { ThemeToggle } from "@/components/theme-toggle";
 
 function DashboardContent() {
-  const { isSignedIn, user } = useUser();
+  const { user, loading: authLoading } = useAuth();
+  const isSignedIn = !!user;
   const searchParams = useSearchParams();
 
   // --- APP STATE ---
   const [activeTab, setActiveTab] = useState<"dashboard" | "history" | "pricing">("dashboard");
 
   // --- USER DATA ---
-  const [plan, setPlan] = useState<"guest" | "free" | "pro">("guest");
+  const [plan, setPlan] = useState<"guest" | "free" | "pro" | "design" | "enterprise">("guest");
   const [auditsUsed, setAuditsUsed] = useState(0);
-  const [auditLimit, setAuditLimit] = useState<number | null>(2);
-  const [tokenLimit, setTokenLimit] = useState(2000);
+  const [auditLimit, setAuditLimit] = useState<number | null>(3);
+  const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
 
   // --- AUDIT INPUTS ---
   const [files, setFiles] = useState<File[]>([]);
@@ -71,7 +73,7 @@ function DashboardContent() {
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryRecord | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const isPro = plan === "pro";
+  const isPaid = ["pro", "design", "enterprise", "agency"].includes(plan);
   const freeAuditsLeft = auditLimit === null ? Infinity : Math.max(auditLimit - auditsUsed, 0);
 
   // --- INIT DATA & PARAMS ---
@@ -85,17 +87,18 @@ function DashboardContent() {
         setPlan("guest");
         setAuditsUsed(0);
         setAuditLimit(2);
-        setTokenLimit(2000);
+
         return;
       }
 
       try {
         const res = await fetch("/api/usage");
         const data = await res.json();
-        setPlan(data.plan === "pro" ? "pro" : data.plan === "free" ? "free" : "guest");
+        setPlan(data.plan || "guest");
         setAuditsUsed(typeof data.audits_used === "number" ? data.audits_used : 0);
         setAuditLimit(data.limit === null || data.limit === undefined ? null : data.limit);
-        setTokenLimit(data.token_limit || 2000);
+
+        setPlanExpiresAt(data.plan_expires_at || null);
       } catch (err) {
         console.error("Failed to load usage", err);
       }
@@ -131,25 +134,19 @@ function DashboardContent() {
     // Ideally fetch fresh usage from server, but for speed we optimistic update
     setPlan(planId as any);
 
-    let newAuditLimit: number | null = 2;
+    let newAuditLimit: number | null = 3;
     let newTokenLimit = 2000;
 
     if (planId === "pro") {
-      newAuditLimit = null;
-      newTokenLimit = 4000;
-    } else if (planId === "agency") {
-      newAuditLimit = null;
-      newTokenLimit = 8000;
-    } else if (planId === "plus") {
-      newAuditLimit = 12;
-      newTokenLimit = 3000;
-    } else if (planId === "lite") {
-      newAuditLimit = 5;
-      newTokenLimit = 2500;
+      newAuditLimit = 60;
+
+    } else if (planId === "design") {
+      newAuditLimit = null; // Unlimited
+
     }
 
     setAuditLimit(newAuditLimit);
-    setTokenLimit(newTokenLimit);
+
     setAuditsUsed(0);
     setActiveTab("dashboard");
     alert(`${planId.charAt(0).toUpperCase() + planId.slice(1)} plan activated!`);
@@ -296,10 +293,10 @@ function DashboardContent() {
 
         // Update Local Limits
         if (data.limits) {
-          setPlan(data.limits.plan === "pro" ? "pro" : data.limits.plan === "free" ? "free" : "guest");
+          setPlan(data.limits.plan || "guest");
           if (typeof data.limits.audits_used === "number") setAuditsUsed(data.limits.audits_used);
           setAuditLimit(data.limits.limit === null || data.limits.limit === undefined ? null : data.limits.limit);
-          if (data.limits.token_limit) setTokenLimit(data.limits.token_limit);
+
         } else if (isSignedIn) {
           setAuditsUsed((prev) => prev + 1);
         }
@@ -388,12 +385,22 @@ function DashboardContent() {
       // Title
       doc.setFontSize(16);
       doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
-      doc.text(analysisData.ui_title || "Ui UX Audit Report", 15, 50); // Moved from 32 to 50
+      doc.text(analysisData.ui_title || "Ui UX Audit Report", 15, 50);
 
       doc.setFontSize(10);
       doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
-      doc.text(`Framework: ${framework === 'nielsen' ? "Nielsen's Heuristics" : "Custom"}`, 15, 58); // From 40 to 58
-      doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 63); // From 45 to 63
+      doc.text(`Framework: ${framework === 'nielsen' ? "Nielsen's Heuristics" : "Custom"}`, 15, 58);
+
+      let headerY = 63;
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, headerY);
+
+      if (analysisData.target_url) {
+        headerY += 5;
+        doc.setTextColor(79, 70, 229); // Accent color
+        doc.text(`Site: ${analysisData.target_url}`, 15, headerY);
+      }
+
+      // ... (Rest of the PDF generation)
 
       // Score Card (Top Right)
       const score = Math.round(analysisData.score || 0);
@@ -424,7 +431,12 @@ function DashboardContent() {
         try {
           // Wait a bit for render
           await new Promise(r => setTimeout(r, 200));
-          const chartDataUrl = await toPng(chartEl, { backgroundColor: '#F8FAFC' });
+          const chartDataUrl = await toPng(chartEl, {
+            backgroundColor: '#ffffff',
+            style: {
+              color: '#1e293b', // Force dark text (Slate 800) for PDF
+            }
+          });
 
           // Draw Chart Card Background
           doc.setFillColor(CARD.r, CARD.g, CARD.b);
@@ -564,16 +576,25 @@ function DashboardContent() {
         cursorY += cardHeight + 5;
       });
 
-      // Branding Footer
-      const pageCount = doc.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(150, 150, 150);
-        doc.text("Generative AI Audit by Heuristic.ai", pageWidth - 15, pageHeight - 5, { align: "right" });
+      // Branding Footer (Only if not Enterprise)
+      if (plan !== 'enterprise') {
+        const pageCount = doc.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text("Generative AI Audit by Heuristic.ai", pageWidth - 15, pageHeight - 5, { align: "right" });
+        }
       }
 
-      doc.save(`Heuristic_Audit_Report.pdf`);
+      // Filename construction
+      const siteName = analysisData.target_url
+        ? new URL(analysisData.target_url).hostname.replace('www.', '').split('.')[0]
+        : "Site";
+      const cleanTitle = (analysisData.ui_title || siteName).replace(/[^a-zA-Z0-9 ]/g, "").trim();
+      const filename = `${cleanTitle} Heuristic Audit - Heuristic-ai.pdf`;
+
+      doc.save(filename);
 
     } catch (err: any) {
       console.error("PDF Fail:", err);
@@ -677,10 +698,10 @@ function DashboardContent() {
             <button onClick={() => setActiveTab("pricing")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === 'pricing' ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'text-muted-text hover:text-foreground hover:bg-foreground/5'}`}>
               <CreditCard className="w-5 h-5" /> Pricing
             </button>
-            {user?.emailAddresses?.[0]?.emailAddress === "devkulshrestha27@gmail.com" && (
-              <a href="/admin" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium text-muted-text hover:text-red-400 hover:bg-red-500/10 mt-6 border border-transparent hover:border-red-500/20">
+            {user?.isAdmin && (
+              <Link href="/admin" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium text-muted-text hover:text-red-400 hover:bg-red-500/10 mt-6 border border-transparent hover:border-red-500/20">
                 <Shield className="w-5 h-5" /> Admin Console
-              </a>
+              </Link>
             )}
           </nav>
         </div>
@@ -688,24 +709,28 @@ function DashboardContent() {
           {!isSignedIn ? (
             <div className="bg-foreground/[0.03] p-4 rounded-xl border border-border-dim text-center">
               <p className="text-xs text-muted-text mb-3">Sign in to save history</p>
-              <SignInButton mode="modal"><button className="w-full py-2 bg-accent-primary hover:opacity-90 rounded-lg text-white font-bold text-xs shadow-md shadow-accent-primary/20">Sign In</button></SignInButton>
+              <Link href="/login" className="block w-full py-2 bg-accent-primary hover:opacity-90 rounded-lg text-white font-bold text-xs shadow-md shadow-accent-primary/20 text-center">
+                Sign In
+              </Link>
             </div>
           ) : (
-            <div className="flex items-center gap-3 bg-foreground/[0.03] p-3 rounded-xl border border-border-dim">
-              {user.imageUrl ? (
-                <img src={user.imageUrl} alt={user.fullName || "User"} className="w-10 h-10 rounded-full border border-border-dim shadow-lg object-cover" />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-primary to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">{user.firstName?.charAt(0)}</div>
-              )}
-              <div className="flex-1 overflow-hidden">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-bold text-foreground truncate">{user.firstName}</p>
-                  {isPro && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold">PRO</span>}
+            <>
+              {auditLimit !== null && (
+                <div className="mb-4 px-2">
+                  <div className="flex justify-between text-[10px] font-bold text-muted-text mb-1.5 uppercase tracking-wider">
+                    <span>Audits Left</span>
+                    <span>{freeAuditsLeft} / {auditLimit}</span>
+                  </div>
+                  <div className="h-1.5 bg-foreground/10 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${auditsUsed >= auditLimit ? 'bg-red-500' : 'bg-accent-primary'}`}
+                      style={{ width: `${Math.min((auditsUsed / auditLimit) * 100, 100)}%` }}
+                    />
+                  </div>
                 </div>
-                <p className="text-xs text-muted-text truncate">{isPro ? "Unlimited Access" : `${freeAuditsLeft} Free Audits Left`}</p>
-              </div>
-              <SignOutButton><button className="text-muted-text hover:text-red-500 transition-colors"><LogOut className="w-4 h-4" /></button></SignOutButton>
-            </div>
+              )}
+              <UserProfileButton direction="up" />
+            </>
           )}
         </div>
       </aside>
@@ -722,7 +747,7 @@ function DashboardContent() {
                   <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">{isSignedIn ? `Welcome back, ${user.firstName}` : "Design Audit Dashboard"}</h1>
                   <p className="text-muted-text text-sm md:text-base">Upload your UI to get expert feedback instantly.</p>
                 </div>
-                {!isPro && isSignedIn && (
+                {!isPaid && isSignedIn && (
                   <button onClick={() => setActiveTab("pricing")} className="group flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs rounded-full shadow-lg shadow-orange-500/20 hover:scale-110 hover:shadow-xl hover:shadow-orange-500/30 transition-all duration-300"><Sparkles className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" /> Upgrade to Pro</button>
                 )}
               </div>
@@ -786,7 +811,7 @@ function DashboardContent() {
                 <div className="mt-8 pt-8 border-t border-border-dim flex flex-col md:flex-row gap-4 items-stretch">
                   <div className="relative w-full md:flex-1 md:min-w-[300px]">
                     <button
-                      onClick={() => setFrameworkMenuOpen(!frameworkMenuOpen)}
+                      onClick={() => !isPaid ? alert("Upgrade to Pro to unlock WCAG and Gestalt frameworks!") : setFrameworkMenuOpen(!frameworkMenuOpen)}
                       className="w-full bg-background border border-border-dim rounded-xl px-4 py-3 text-sm text-foreground flex justify-between items-center hover:bg-foreground/5 transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
                     >
                       <span className="truncate mr-2">
@@ -794,6 +819,7 @@ function DashboardContent() {
                         {framework === "wcag" && "WCAG 2.1 (Accessibility)"}
                         {framework === "gestalt" && "Gestalt Principles"}
                       </span>
+                      {!isPaid && <Lock className="w-3 h-3 text-amber-500 ml-2" />}
                       <ChevronDown className={`w-4 h-4 text-muted-text transition-transform ${frameworkMenuOpen ? "rotate-180" : ""}`} />
                     </button>
 
@@ -844,12 +870,12 @@ function DashboardContent() {
                       </div>
                       {isSignedIn && (
                         <button
-                          onClick={handleExportPDF}
+                          onClick={plan === 'free' ? () => setActiveTab("pricing") : handleExportPDF}
                           disabled={pdfGenerating}
-                          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg disabled:opacity-50 transition-colors"
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm shadow-lg transition-colors ${plan === 'free' ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
                         >
-                          {pdfGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                          Export PDF Report
+                          {pdfGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : plan === 'free' ? <Lock className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                          {plan === 'free' ? "Unlock PDF Report" : "Export PDF Report"}
                         </button>
                       )}
                     </div>
@@ -1009,13 +1035,13 @@ function DashboardContent() {
           {/* --- TAB 3: PRICING --- */}
           {activeTab === "pricing" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <PricingPlans onUpgrade={handleUpgrade} />
+              <PricingPlans onUpgrade={handleUpgrade} planExpiresAt={planExpiresAt} currentPlan={plan} />
             </div>
           )}
 
         </div>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }
 

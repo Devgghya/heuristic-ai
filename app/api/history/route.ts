@@ -1,12 +1,13 @@
 import { sql } from "@vercel/postgres";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const { userId } = await auth();
+    const session = await getSession();
+    const userId = session?.id;
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Fetch user's audits, sorted by newest first
@@ -25,7 +26,8 @@ export async function GET() {
 
 export async function DELETE(request: Request) {
   try {
-    const { userId } = await auth();
+    const session = await getSession();
+    const userId = session?.id;
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(request.url);

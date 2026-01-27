@@ -1,32 +1,43 @@
 import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
-import { auth } from "@clerk/nextjs/server";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
 
 
-const PLAN_PRICES_CENTS = {
-    lite: 200,    // $2.00
+const PLAN_PRICES_USD = {
     plus: 500,    // $5.00
     pro: 1900,    // $19.00
     agency: 4900, // $49.00
 };
 
+const PLAN_PRICES_INR = {
+    plus: 49900,   // ₹499.00
+    pro: 159900,   // ₹1,599.00
+    agency: 399900, // ₹3,999.00
+};
+
 export async function POST(req: Request) {
     try {
-        const { userId } = await auth();
+        const session = await getSession();
+        const userId = session?.id;
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { planId } = await req.json();
+        const { planId, currency = "USD" } = await req.json();
 
-        if (!planId || !PLAN_PRICES_CENTS[planId as keyof typeof PLAN_PRICES_CENTS]) {
-            return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
+        if (!planId) {
+            return NextResponse.json({ error: "Missing plan ID" }, { status: 400 });
         }
 
-        const amount = PLAN_PRICES_CENTS[planId as keyof typeof PLAN_PRICES_CENTS];
+        const prices = currency === "INR" ? PLAN_PRICES_INR : PLAN_PRICES_USD;
+        const amount = prices[planId as keyof typeof prices];
+
+        if (!amount) {
+            return NextResponse.json({ error: "Invalid plan or currency" }, { status: 400 });
+        }
 
         const razorpay = new Razorpay({
             key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
@@ -38,7 +49,7 @@ export async function POST(req: Request) {
 
         const options = {
             amount: amount,
-            currency: "USD",
+            currency: currency,
             receipt: shortReceipt,
             notes: {
                 userId: userId,

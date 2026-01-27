@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { SignInButton } from "@clerk/nextjs";
-import { useUser } from "@clerk/nextjs";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/components/auth-provider";
 import { Plus, Trash2, BarChart3, Loader, Download, LayoutDashboard, GitCompare, Home as HomeIcon, Zap, Lightbulb } from "lucide-react";
 import Link from "next/link";
 import jsPDF from "jspdf";
@@ -19,11 +18,31 @@ interface Competitor {
 }
 
 export default function ComparePage() {
-  const { user, isLoaded } = useUser();
+  const { user, loading: authLoading } = useAuth();
+  const isLoaded = !authLoading;
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [yourSite, setYourSite] = useState<Competitor>({ id: "your-site", name: "Your Site" });
   const [framework, setFramework] = useState("nielsen");
   const [comparing, setComparing] = useState(false);
+  const [plan, setPlan] = useState<string>("free");
+  const [planLoading, setPlanLoading] = useState(true);
+
+  useEffect(() => {
+    async function checkAccess() {
+      try {
+        const res = await fetch("/api/usage");
+        if (res.ok) {
+          const data = await res.json();
+          setPlan(data.plan || "free");
+        }
+      } catch (e) {
+        console.error("Failed to check plan", e);
+      } finally {
+        setPlanLoading(false);
+      }
+    }
+    checkAccess();
+  }, []);
 
   const addCompetitor = () => {
     const newCompetitor: Competitor = {
@@ -383,8 +402,52 @@ export default function ComparePage() {
     }
   };
 
-  if (!isLoaded) {
-    return <div className="text-center py-20">Loading...</div>;
+  if (!isLoaded || planLoading) {
+    return <div className="text-center py-20 flex flex-col items-center gap-4"><Loader className="w-8 h-8 animate-spin text-accent-primary" /> <p>Loading...</p></div>;
+  }
+
+  // --- PAYWALL / GATING ---
+  // Assuming "plus", "pro", "agency" are paid plans. "free" and "guest" are blocked.
+  const isAllowed = ["pro", "design", "enterprise", "agency", "admin"].includes(plan);
+
+  if (!isAllowed) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-6 pb-24 md:pb-6 relative overflow-hidden flex flex-col items-center justify-center">
+        {/* Background Blur */}
+        <div className="absolute inset-0 z-0 opacity-20 pointer-events-none blur-3xl">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600 rounded-full" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600 rounded-full" />
+        </div>
+
+        <div className="relative z-10 max-w-lg w-full bg-card border border-border-dim p-8 rounded-3xl shadow-2xl text-center">
+          <div className="w-16 h-16 bg-accent-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6 transform rotate-12">
+            <GitCompare className="w-8 h-8 text-accent-primary" />
+          </div>
+          <h1 className="text-3xl font-black text-foreground mb-4">Competitor Benchmarking</h1>
+          <p className="text-muted-text mb-8">
+            Compare your site against top competitors. Identify weaknesses, track severity metrics, and generate side-by-side PDF reports.
+          </p>
+
+          <div className="bg-foreground/[0.03] border border-border-dim rounded-xl p-4 mb-8">
+            <p className="text-xs font-bold text-muted-text mb-2 uppercase tracking-wider">Available on</p>
+            <div className="flex items-center justify-center gap-2">
+              <span className="px-3 py-1 bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 rounded-lg text-sm font-bold">Pro Analyst</span>
+              <span className="px-3 py-1 bg-purple-500/10 text-purple-500 border border-purple-500/20 rounded-lg text-sm font-bold">Design Studio</span>
+            </div>
+          </div>
+
+          <Link
+            href="/dashboard"
+            className="block w-full py-4 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-xl font-bold shadow-lg shadow-accent-primary/25 transition-all hover:scale-[1.02]"
+          >
+            Upgrade to Unlock
+          </Link>
+          <Link href="/dashboard" className="block mt-4 text-sm text-muted-text hover:text-foreground">
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

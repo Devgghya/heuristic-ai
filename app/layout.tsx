@@ -1,6 +1,6 @@
 import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
-import { ClerkThemeWrapper } from '@/components/clerk-theme-wrapper';
+import { AuthProvider } from '@/components/auth-provider';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,9 +12,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           enableSystem
           disableTransitionOnChange
         >
-          <ClerkThemeWrapper>
+          <AuthProvider>
             {children}
-          </ClerkThemeWrapper>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

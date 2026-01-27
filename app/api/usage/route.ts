@@ -1,27 +1,31 @@
-import { auth } from "@clerk/nextjs/server";
+import { getSession } from "@/lib/auth";
 import { sql } from "@vercel/postgres";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const FREE_AUDIT_LIMIT = 2;
+const FREE_AUDIT_LIMIT = 3;
 const LITE_AUDIT_LIMIT = 5;
 const PLUS_AUDIT_LIMIT = 12;
+const PRO_AUDIT_LIMIT = 60;
 
 const FREE_MAX_TOKENS = 2000;
 const LITE_MAX_TOKENS = 2500;
 const PLUS_MAX_TOKENS = 3000;
 const PRO_MAX_TOKENS = 4000;
 const AGENCY_MAX_TOKENS = 8000;
+const DESIGN_MAX_TOKENS = 8000;
+const ENTERPRISE_MAX_TOKENS = 10000;
 
 const periodKey = () => new Date().toISOString().slice(0, 7); // YYYY-MM
 
 type Usage = {
-  plan: "free" | "lite" | "plus" | "pro" | "agency";
+  plan: "free" | "lite" | "plus" | "pro" | "agency" | "design" | "enterprise";
   auditsUsed: number;
   tokenLimit: number;
   period: string;
   auditLimit?: number | null;
+  planExpiresAt?: string | null;
 };
 
 async function ensureUsage(userId: string): Promise<Usage> {
@@ -37,7 +41,7 @@ async function ensureUsage(userId: string): Promise<Usage> {
     );
   `;
   const { rows } = await sql`
-    SELECT plan, audits_used, period_key
+    SELECT plan, audits_used, period_key, plan_expires_at
     FROM user_usage
     WHERE user_id = ${userId}
   `;
@@ -64,24 +68,41 @@ async function ensureUsage(userId: string): Promise<Usage> {
     storedPeriod = current;
   }
 
-  const plan = (row.plan || "free") as Usage["plan"];
+  // --- EXPIRATION CHECK ---
+  let plan = (row.plan || "free") as Usage["plan"];
+  let planExpiresAt = row.plan_expires_at;
+
+  if (plan !== 'free' && planExpiresAt && new Date(planExpiresAt) < new Date()) {
+    // Plan expired! Downgrade to free
+    await sql`
+      UPDATE user_usage
+      SET plan = 'free', plan_expires_at = NULL, token_limit = ${FREE_MAX_TOKENS}, updated_at = NOW()
+      WHERE user_id = ${userId}
+    `;
+    plan = 'free';
+    planExpiresAt = null;
+  }
 
   let tokenLimit = FREE_MAX_TOKENS;
   if (plan === "lite") tokenLimit = LITE_MAX_TOKENS;
   else if (plan === "plus") tokenLimit = PLUS_MAX_TOKENS;
   else if (plan === "pro") tokenLimit = PRO_MAX_TOKENS;
   else if (plan === "agency") tokenLimit = AGENCY_MAX_TOKENS;
+  else if (plan === "design") tokenLimit = DESIGN_MAX_TOKENS;
+  else if (plan === "enterprise") tokenLimit = ENTERPRISE_MAX_TOKENS;
 
   let auditLimit: number | null = null;
   if (plan === "free") auditLimit = FREE_AUDIT_LIMIT;
   else if (plan === "lite") auditLimit = LITE_AUDIT_LIMIT;
   else if (plan === "plus") auditLimit = PLUS_AUDIT_LIMIT;
+  else if (plan === "pro") auditLimit = PRO_AUDIT_LIMIT;
 
-  return { plan, auditsUsed, tokenLimit, period: storedPeriod, auditLimit };
+  return { plan, auditsUsed, tokenLimit, period: storedPeriod, auditLimit, planExpiresAt };
 }
 
 export async function GET() {
-  const { userId } = await auth();
+  const session = await getSession();
+  const userId = session?.id;
   if (!userId) {
     return NextResponse.json({
       plan: "guest",
@@ -95,9 +116,10 @@ export async function GET() {
   return NextResponse.json({
     plan: usage.plan,
     audits_used: usage.auditsUsed,
-    limit: usage.plan === "free" ? FREE_AUDIT_LIMIT : usage.plan === "lite" ? LITE_AUDIT_LIMIT : usage.plan === "plus" ? PLUS_AUDIT_LIMIT : null,
+    limit: usage.plan === "free" ? FREE_AUDIT_LIMIT : usage.plan === "pro" ? PRO_AUDIT_LIMIT : usage.plan === "lite" ? LITE_AUDIT_LIMIT : usage.plan === "plus" ? PLUS_AUDIT_LIMIT : null,
     token_limit: usage.tokenLimit,
     period_key: usage.period,
+    plan_expires_at: usage.planExpiresAt,
   });
 }
 

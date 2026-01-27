@@ -1,0 +1,192 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
+import { Loader2, User, Save, LogOut, ArrowLeft, CreditCard } from "lucide-react";
+import { motion } from "framer-motion";
+import Link from "next/link";
+
+export default function AccountPage() {
+    const { user, refresh } = useAuth();
+    const router = useRouter();
+    const [loading, setLoading] = useState(false);
+    const [firstName, setFirstName] = useState(user?.firstName || "");
+    const [lastName, setLastName] = useState(user?.lastName || "");
+    const [imageUrl, setImageUrl] = useState(user?.imageUrl || "");
+    const [success, setSuccess] = useState("");
+    const [error, setError] = useState("");
+
+    const handleUpdateProfile = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError("");
+        setSuccess("");
+
+        try {
+            const res = await fetch("/api/user/update", {
+                method: "POST",
+                body: JSON.stringify({ firstName, lastName, imageUrl }),
+                headers: { "Content-Type": "application/json" },
+            });
+
+            if (res.ok) {
+                setSuccess("Profile updated successfully");
+                await refresh();
+            } else {
+                const data = await res.json();
+                setError(data.error || "Failed to update profile");
+            }
+        } catch (err) {
+            setError("Error updating profile");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        if (!confirm("Are you sure you want to log out?")) return;
+
+        try {
+            await fetch("/api/auth/logout", { method: "POST" });
+            router.push("/login");
+            router.refresh(); // Refresh to clear auth state
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-[#0a0a0a] p-8 text-white">
+            <div className="max-w-2xl mx-auto">
+                <div className="mb-8 flex flex-col gap-4">
+                    <Link
+                        href="/dashboard"
+                        className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-medium w-fit group"
+                    >
+                        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                        Back to Dashboard
+                    </Link>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+                                Account Settings
+                            </h1>
+                            <p className="text-slate-400">Manage your profile and preferences.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-[#121214] border border-white/5 rounded-2xl p-8 shadow-xl"
+                >
+                    <form onSubmit={handleUpdateProfile} className="space-y-6">
+                        {/* Avatar Section */}
+                        <div className="flex items-center gap-6 pb-6 border-b border-white/5">
+                            <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border-2 border-white/10 relative group">
+                                {imageUrl || user?.imageUrl ? (
+                                    <img src={imageUrl || user?.imageUrl} alt="Profile" className="w-full h-full object-cover" />
+                                ) : (
+                                    <User className="w-8 h-8 text-slate-400" />
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1">Profile Image URL</label>
+                                <input
+                                    type="text"
+                                    value={imageUrl}
+                                    onChange={(e) => setImageUrl(e.target.value)}
+                                    placeholder="https://example.com/avatar.jpg"
+                                    className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1">First Name</label>
+                                <input
+                                    type="text"
+                                    value={firstName}
+                                    onChange={(e) => setFirstName(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1">Last Name</label>
+                                <input
+                                    type="text"
+                                    value={lastName}
+                                    onChange={(e) => setLastName(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1">Email Address</label>
+                            <input
+                                type="email"
+                                value={user?.email || ""}
+                                disabled
+                                className="w-full bg-black/20 border border-white/5 rounded-xl px-4 py-3 text-slate-500 cursor-not-allowed"
+                            />
+                            <p className="text-[10px] text-slate-600 mt-1">Email address cannot be changed currently.</p>
+                        </div>
+
+                        {success && (
+                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-sm">
+                                {success}
+                            </div>
+                        )}
+                        {error && (
+                            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                                {error}
+                            </div>
+                        )}
+
+                        <div className="pt-6 border-t border-white/5">
+                            <Link
+                                href="/account/plan"
+                                className="flex items-center justify-between p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl hover:bg-indigo-500/20 transition-all group mb-6"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                                        <CreditCard className="w-5 h-5 text-indigo-400" />
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-white group-hover:text-indigo-300 transition-colors">Current Plan & Usage</div>
+                                        <div className="text-xs text-slate-400">View subscription details and limits</div>
+                                    </div>
+                                </div>
+                                <ArrowLeft className="w-4 h-4 rotate-180 text-indigo-400 group-hover:translate-x-1 transition-transform" />
+                            </Link>
+
+                            <div className="flex justify-between items-center">
+                                <button
+                                    type="button"
+                                    onClick={handleLogout}
+                                    className="px-4 py-2 flex items-center gap-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors text-sm font-bold"
+                                >
+                                    <LogOut className="w-4 h-4" />
+                                    Sign Out
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                                >
+                                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                    Save Changes
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </motion.div>
+            </div>
+        </div>
+    );
+}

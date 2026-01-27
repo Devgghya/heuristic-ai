@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, Sparkles, CreditCard, Shield, Zap, Rocket, Loader2, Coffee } from "lucide-react";
+import { Check, Sparkles, CreditCard, Shield, Zap, Rocket, Loader2, Coffee, Lock } from "lucide-react";
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 declare global {
     interface Window {
@@ -13,6 +14,7 @@ interface Plan {
     id: string;
     name: string;
     price: string;
+    priceInr: string;
     period: string;
     features: string[];
     recommended?: boolean;
@@ -22,85 +24,81 @@ interface Plan {
 
 const PLANS: Plan[] = [
     {
-        id: "free",
-        name: "Free Starter",
-        price: "$0",
+        id: "pro",
+        name: "Pro Analyst",
+        price: "$6",
+        priceInr: "₹499",
         period: "/month",
         features: [
-            "2 Audits per month",
-            "Basic Heuristic Analysis (Nielsen)",
-            "Public Report Links",
-            "Community Support",
+            "60 Audits per month",
+            "All Frameworks (WCAG, Gestalt)",
+            "Download Official PDF Reports",
+            "Unlimited History",
         ],
-        cta: "Current Plan",
-        color: "slate",
-    },
-    {
-        id: "lite",
-        name: "Lite",
-        price: "$2",
-        period: "/month",
-        features: [
-            "5 Audits per month",
-            "Basic Heuristic Analysis",
-            "Public Report Links",
-            "Community Support",
-        ],
-        cta: "Get Lite",
-        color: "emerald",
-    },
-    {
-        id: "plus",
-        name: "Plus",
-        price: "$5",
-        period: "/month",
-        features: [
-            "12 Audits per month",
-            "Nielsen + WCAG Frameworks",
-            "Public Report Links",
-            "Community Support",
-        ],
-        cta: "Upgrade to Plus",
+        cta: "Upgrade to Pro",
         color: "blue",
     },
     {
-        id: "pro",
-        name: "Pro Analyst",
-        price: "$19",
+        id: "design",
+        name: "Design Studio",
+        price: "$30",
+        priceInr: "₹2499",
         period: "/month",
         features: [
             "Unlimited Audits",
-            "All Frameworks (WCAG, Gestalt)",
-            "PDF Export & Private History",
-            "Priority Email Support",
-            "Competitor Benchmarking",
+            "Priority Faster Processing",
+            "Everything in Pro",
+            "Team Dashboard",
         ],
         recommended: true,
-        cta: "Upgrade to Pro",
+        cta: "Upgrade to Studio",
         color: "indigo",
     },
     {
-        id: "agency",
-        name: "Agency",
-        price: "$49",
-        period: "/month",
+        id: "enterprise",
+        name: "Enterprise",
+        price: "Contact",
+        priceInr: "Contact",
+        period: "",
         features: [
-            "Everything in Pro",
-            "5 Team Seats",
             "White-label Reports",
             "API Access",
-            "Dedicated Success Manager",
+            "Custom Integration",
+            "Dedicated Support",
         ],
         cta: "Contact Sales",
         color: "purple",
     },
 ];
 
-export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => void }) {
+export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgrade: (planId: string) => void, planExpiresAt: string | null, currentPlan: string }) {
     const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+    const [region, setRegion] = useState<"IN" | "GLOBAL">("GLOBAL");
 
     useEffect(() => {
+        // 1. Instant Timezone Check (Fallback/Fastest)
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz === 'Asia/Kolkata') {
+            setRegion("IN");
+        }
+
+        // 2. IP Detection (More Accurate)
+        fetch("https://ipapi.co/json/")
+            .then(res => res.json())
+            .then(data => {
+                if (data.country_code === "IN") {
+                    setRegion("IN");
+                } else {
+                    // Only override if we are sure it's NOT IN (e.g. traveling?) 
+                    // But for now, let's trust the IP if it returns.
+                    // If IP says US but Timezone says IN, usually IP is right (VPN).
+                    // If IP fails, we keep Timezone result.
+                    if (data.country_code) setRegion(data.country_code === "IN" ? "IN" : "GLOBAL");
+                }
+            })
+            .catch(() => console.log("Region detection failed, using timezone fallback"));
+
         const script = document.createElement("script");
         script.src = "https://checkout.razorpay.com/v1/checkout.js";
         script.async = true;
@@ -111,6 +109,12 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
     }, []);
 
     const handleSubscribe = async (planId: string) => {
+        if (region === "GLOBAL") {
+            // Placeholder for Lemon Squeezy / Global Payment
+            alert("Global payments via Lemon Squeezy are coming soon!");
+            return;
+        }
+
         if (!window.Razorpay) {
             alert("Razorpay SDK failed to load. Please check your internet connection.");
             return;
@@ -127,7 +131,7 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
             const res = await fetch("/api/payment/create-order", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ planId }),
+                body: JSON.stringify({ planId, currency: region === "IN" ? "INR" : "USD" }),
             });
 
             if (!res.ok) {
@@ -160,6 +164,13 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
                         }
                     } catch (err) {
                         alert("Payment verification failed.");
+                    } finally {
+                        setLoadingPlan(null);
+                    }
+                },
+                modal: {
+                    ondismiss: function () {
+                        setLoadingPlan(null);
                     }
                 },
                 prefill: {
@@ -176,12 +187,12 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
 
             rzp1.on('payment.failed', function (response: any) {
                 alert(response.error.description);
+                setLoadingPlan(null);
             });
 
         } catch (error: any) {
             console.error(error);
             alert(`Checkout failed: ${error.message}`);
-        } finally {
             setLoadingPlan(null);
         }
     };
@@ -194,26 +205,50 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
                 </h2>
                 <p className="text-muted-text text-lg max-w-2xl mx-auto">
                     Choose the perfect plan for your design auditing needs. No hidden fees.
+                    {planExpiresAt && (
+                        <span className="block mt-4 text-sm font-bold text-accent-primary bg-accent-primary/5 border border-accent-primary/20 py-2 px-4 rounded-full w-fit mx-auto">
+                            📅 Your plan renews on {new Date(planExpiresAt).toLocaleDateString()}
+                        </span>
+                    )}
                 </p>
 
-                {/* Billing Toggle (Mock) */}
-                <div className="flex items-center justify-center gap-4 mt-8">
-                    <button
-                        onClick={() => setBillingCycle("monthly")}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${billingCycle === "monthly" ? "bg-accent-primary text-white shadow-lg shadow-accent-primary/25" : "text-muted-text hover:text-foreground"}`}
-                    >
-                        Monthly
-                    </button>
-                    <button
-                        onClick={() => setBillingCycle("annual")}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${billingCycle === "annual" ? "bg-accent-primary text-white shadow-lg shadow-accent-primary/25" : "text-muted-text hover:text-foreground"}`}
-                    >
-                        Annual <span className="text-[10px] text-emerald-400 ml-1 font-black uppercase tracking-wider">Save 20%</span>
-                    </button>
+                <div className="flex flex-col md:flex-row items-center justify-center gap-6 mt-8">
+                    {/* Billing Toggle */}
+                    <div className="flex items-center gap-2 p-1 bg-card border border-border-dim rounded-xl">
+                        <button
+                            onClick={() => setBillingCycle("monthly")}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${billingCycle === "monthly" ? "bg-accent-primary text-white shadow-md" : "text-muted-text hover:text-foreground"}`}
+                        >
+                            Monthly
+                        </button>
+                        <button
+                            onClick={() => setBillingCycle("annual")}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${billingCycle === "annual" ? "bg-accent-primary text-white shadow-md" : "text-muted-text hover:text-foreground"}`}
+                        >
+                            Annual <span className="text-[10px] bg-white/20 px-1 rounded ml-1">SAVE 20%</span>
+                        </button>
+                    </div>
+
+                    {/* Currency Toggle */}
+                    <div className="flex items-center gap-2 p-1 bg-card border border-border-dim rounded-xl">
+                        <button
+                            onClick={() => setRegion("GLOBAL")}
+                            className={`px-3 py-2 rounded-lg text-sm font-bold transition-all ${region === "GLOBAL" ? "bg-foreground text-background shadow-md" : "text-muted-text hover:text-foreground"}`}
+                        >
+                            USD ($)
+                        </button>
+                        <button
+                            onClick={() => setRegion("IN")}
+                            className={`px-3 py-2 rounded-lg text-sm font-bold transition-all ${region === "IN" ? "bg-foreground text-background shadow-md" : "text-muted-text hover:text-foreground"}`}
+                        >
+                            INR (₹)
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6 items-start">
+            <div className="grid md:grid-cols-3 gap-6">
+
                 {PLANS.map((plan) => (
                     <div
                         key={plan.id}
@@ -236,18 +271,23 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
                             {plan.id === "pro" ? <Sparkles className="w-6 h-6" /> :
                                 plan.id === "agency" ? <Shield className="w-6 h-6" /> :
                                     plan.id === "plus" ? <Rocket className="w-6 h-6" /> :
-                                        plan.id === "lite" ? <Coffee className="w-6 h-6" /> :
-                                            <Zap className="w-6 h-6" />}
+                                        <Zap className="w-6 h-6" />}
                         </div>
 
                         <h3 className="text-xl font-bold text-foreground mb-2">{plan.name}</h3>
                         <div className="flex items-baseline gap-1 mb-6">
                             <span className="text-4xl font-black text-foreground">
-                                {billingCycle === "annual" && plan.id !== "free"
-                                    ? `$${(parseInt(plan.price.replace("$", "")) * 0.8).toFixed(0)}`
-                                    : plan.price}
+                                {plan.id === "enterprise" ? "Contact" : region === "IN" ? (
+                                    billingCycle === "annual" && plan.id !== "free"
+                                        ? `₹${(parseInt(plan.priceInr.replace("₹", "")) * 0.8).toFixed(0)}`
+                                        : plan.priceInr
+                                ) : (
+                                    billingCycle === "annual" && plan.id !== "free"
+                                        ? `$${(parseInt(plan.price.replace("$", "")) * 0.8).toFixed(0)}`
+                                        : plan.price
+                                )}
                             </span>
-                            <span className="text-muted-text font-medium">{plan.period}</span>
+                            {plan.period && <span className="text-muted-text font-medium">{plan.period}</span>}
                         </div>
 
                         <ul className="space-y-4 mb-8">
@@ -287,17 +327,14 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
                 ))}
             </div>
 
-            {/* Payment Roadmap */}
+            {/* Payment Info */}
             <div className="mt-8 flex justify-center items-center gap-3">
                 <div className="h-[1px] w-12 bg-border-dim"></div>
                 <p className="text-[10px] md:text-xs font-black uppercase tracking-widest text-muted-text flex items-center gap-2">
                     <CreditCard className="w-3 h-3" />
-                    Securely processed by Razorpay
+                    {region === "IN" ? "Securely processed by Razorpay" : "Securely processed by Lemon Squeezy"}
                 </p>
                 <div className="h-[1px] w-12 bg-border-dim"></div>
-                <p className="text-[10px] md:text-xs font-black uppercase tracking-widest text-accent-primary bg-accent-primary/5 px-2 py-0.5 rounded border border-accent-primary/10">
-                    🍋 Lemon Squeezy Coming Soon
-                </p>
             </div>
 
             <div className="mt-16 text-center bg-card border border-border-dim rounded-2xl p-8 max-w-3xl mx-auto">
@@ -307,6 +344,51 @@ export function PricingPlans({ onUpgrade }: { onUpgrade: (planId: string) => voi
                 </p>
                 <button className="text-accent-primary font-bold hover:underline">Contact Enterprise Support →</button>
             </div>
-        </div >
+
+            {/* Razorpay Backdrop & Loading State */}
+            <AnimatePresence>
+                {loadingPlan && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6 text-center"
+                    >
+                        {/* Blurred Backdrop */}
+                        <div className="absolute inset-0 bg-background/60 backdrop-blur-xl" />
+
+                        {/* Loading Content */}
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            className="relative z-10 max-w-sm w-full bg-card border border-border-dim p-8 rounded-3xl shadow-2xl"
+                        >
+                            <div className="w-16 h-16 bg-accent-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                                <Loader2 className="w-8 h-8 text-accent-primary animate-spin" />
+                            </div>
+                            <h3 className="text-xl font-bold text-foreground mb-2">Secure Checkout</h3>
+                            <p className="text-muted-text text-sm mb-6">
+                                {region === "IN"
+                                    ? "We're securely initializing your session with Razorpay. Please do not refresh."
+                                    : "We're securely initializing your session with Lemon Squeezy. Please do not refresh."
+                                }
+                            </p>
+                            <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-text">
+                                <Lock className="w-3 h-3" /> 256-bit SSL Encryption
+                            </div>
+                        </motion.div>
+
+                        {/* Emergency Close (Hidden but accessible if someone gets stuck) */}
+                        <button
+                            onClick={() => setLoadingPlan(null)}
+                            className="absolute bottom-10 text-muted-text hover:text-foreground text-xs font-bold transition-colors"
+                        >
+                            Cancel Initialization
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }
+

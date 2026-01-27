@@ -5,7 +5,7 @@ import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
     BarChart, Bar, XAxis, YAxis, Tooltip, Cell
 } from "recharts";
-import { AlertCircle, CheckCircle, Lightbulb, Zap } from "lucide-react";
+import { AlertCircle, CheckCircle, Lightbulb, Zap, Lock } from "lucide-react";
 
 interface ReportViewProps {
     data: any; // The full JSON response from the API
@@ -38,6 +38,11 @@ export default function ReportView({ data, uiTitle }: ReportViewProps) {
                     <div className="flex items-center gap-2 mb-3">
                         <span className="bg-accent-primary text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase">AI AUDIT</span>
                         <span className="text-muted-text text-xs font-medium">{new Date().toLocaleDateString()}</span>
+                        {data.target_url && (
+                            <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                                {data.target_url.replace(/^https?:\/\//, '')}
+                            </span>
+                        )}
                     </div>
                     <h2 className="text-2xl md:text-4xl font-extrabold tracking-tight mb-3 text-foreground leading-tight">{uiTitle}</h2>
                     <p className="text-lg md:text-xl text-muted-text max-w-2xl leading-relaxed">{data.summary?.summary_text}</p>
