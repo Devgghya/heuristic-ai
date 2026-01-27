@@ -11,7 +11,7 @@ export async function GET() {
             ADD COLUMN IF NOT EXISTS permissions TEXT[];
         `;
         return NextResponse.json({ success: true, message: "Admin Schema updated successfully" });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Schema Update Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
