@@ -55,6 +55,7 @@ function DashboardContent() {
   const [auditsUsed, setAuditsUsed] = useState(0);
   const [auditLimit, setAuditLimit] = useState<number | null>(3);
   const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
+  const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
 
   // --- AUDIT INPUTS ---
   const [files, setFiles] = useState<File[]>([]);
@@ -99,6 +100,7 @@ function DashboardContent() {
         setAuditLimit(data.limit === null || data.limit === undefined ? null : data.limit);
 
         setPlanExpiresAt(data.plan_expires_at || null);
+        setSubscriptionId(data.subscription_id || null);
       } catch (err) {
         console.error("Failed to load usage", err);
       }
@@ -315,17 +317,18 @@ function DashboardContent() {
       } else if (data.error) {
         alert(data.error);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Error analyzing. Check console.");
+      alert(`Error analyzing: ${error.message || "Unknown error"}. Check console.`);
     } finally {
       setLoading(false);
     }
   }
 
   // --- PDF ENGINE (HYBRID) ---
-  const handleExportPDF = async () => {
-    if (!analysisData) return;
+  const handleExportPDF = async (overrideData?: any) => {
+    const dataToUse = overrideData || analysisData;
+    if (!dataToUse) return;
 
     setPdfGenerating(true);
     try {
@@ -385,7 +388,7 @@ function DashboardContent() {
       // Title
       doc.setFontSize(16);
       doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
-      doc.text(analysisData.ui_title || "Ui UX Audit Report", 15, 50);
+      doc.text(dataToUse.ui_title || "Ui UX Audit Report", 15, 50);
 
       doc.setFontSize(10);
       doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
@@ -394,16 +397,16 @@ function DashboardContent() {
       let headerY = 63;
       doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, headerY);
 
-      if (analysisData.target_url) {
+      if (dataToUse.target_url) {
         headerY += 5;
         doc.setTextColor(79, 70, 229); // Accent color
-        doc.text(`Site: ${analysisData.target_url}`, 15, headerY);
+        doc.text(`Site: ${dataToUse.target_url}`, 15, headerY);
       }
 
       // ... (Rest of the PDF generation)
 
       // Score Card (Top Right)
-      const score = Math.round(analysisData.score || 0);
+      const score = Math.round(dataToUse.score || 0);
       const scoreColor = score >= 80 ? [16, 185, 129] : score >= 60 ? [245, 158, 11] : [239, 68, 68];
 
       doc.setFillColor(CARD.r, CARD.g, CARD.b);
@@ -473,7 +476,7 @@ function DashboardContent() {
       doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
       doc.setFontSize(9);
       let sY = 98; // Moved from 78 to 98
-      (analysisData.key_strengths || []).slice(0, 3).forEach((s: string) => {
+      (dataToUse.key_strengths || []).slice(0, 3).forEach((s: string) => {
         doc.text(`• ${s.substring(0, 45)}${s.length > 45 ? '...' : ''}`, rightColX + 5, sY);
         sY += 6;
       });
@@ -489,7 +492,7 @@ function DashboardContent() {
       doc.setTextColor(TEXT_MUTED.r, TEXT_MUTED.g, TEXT_MUTED.b);
       doc.setFontSize(9);
       let wY = 140; // Moved from 120 to 140
-      (analysisData.key_weaknesses || []).slice(0, 3).forEach((w: string) => {
+      (dataToUse.key_weaknesses || []).slice(0, 3).forEach((w: string) => {
         doc.text(`• ${w.substring(0, 45)}${w.length > 45 ? '...' : ''}`, rightColX + 5, wY);
         wY += 6;
       });
@@ -502,7 +505,7 @@ function DashboardContent() {
 
       let cursorY = 185; // Moved from 165 to 185
 
-      (analysisData.audit || []).forEach((item: any, idx: number) => {
+      (dataToUse.audit || []).forEach((item: any, idx: number) => {
         // 1. Calculate Text Dimensions
         doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
@@ -588,10 +591,19 @@ function DashboardContent() {
       }
 
       // Filename construction
-      const siteName = analysisData.target_url
-        ? new URL(analysisData.target_url).hostname.replace('www.', '').split('.')[0]
-        : "Site";
-      const cleanTitle = (analysisData.ui_title || siteName).replace(/[^a-zA-Z0-9 ]/g, "").trim();
+      const getSafeHostname = (urlStr: string) => {
+        if (!urlStr) return "Site";
+        try {
+          const hasProtocol = /^[a-z]+:\/\//i.test(urlStr);
+          const fullUrl = hasProtocol ? urlStr : `https://${urlStr}`;
+          return new URL(fullUrl).hostname.replace('www.', '').split('.')[0];
+        } catch (e) {
+          return "Site";
+        }
+      };
+
+      const siteName = getSafeHostname(dataToUse.target_url);
+      const cleanTitle = (dataToUse.ui_title || siteName).replace(/[^a-zA-Z0-9 ]/g, "").trim();
       const filename = `${cleanTitle} Heuristic Audit - Heuristic-ai.pdf`;
 
       doc.save(filename);
@@ -870,7 +882,7 @@ function DashboardContent() {
                       </div>
                       {isSignedIn && (
                         <button
-                          onClick={plan === 'free' ? () => setActiveTab("pricing") : handleExportPDF}
+                          onClick={plan === 'free' ? () => setActiveTab("pricing") : () => handleExportPDF(analysisData)}
                           disabled={pdfGenerating}
                           className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm shadow-lg transition-colors ${plan === 'free' ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
                         >
@@ -916,7 +928,7 @@ function DashboardContent() {
                         <button
                           onClick={() => {
                             setAnalysisData(selectedHistoryItem.analysis);
-                            handleExportPDF();
+                            handleExportPDF(selectedHistoryItem.analysis);
                           }}
                           disabled={pdfGenerating}
                           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg disabled:opacity-50 transition-all"
@@ -1035,7 +1047,15 @@ function DashboardContent() {
           {/* --- TAB 3: PRICING --- */}
           {activeTab === "pricing" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <PricingPlans onUpgrade={handleUpgrade} planExpiresAt={planExpiresAt} currentPlan={plan} />
+              <PricingPlans
+                onUpgrade={handleUpgrade}
+                planExpiresAt={planExpiresAt}
+                currentPlan={plan}
+                subscriptionId={subscriptionId}
+                refreshUsage={() => {
+                  window.location.reload();
+                }}
+              />
             </div>
           )}
 

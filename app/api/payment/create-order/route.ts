@@ -4,16 +4,15 @@ import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-
-
-const PLAN_PRICES_USD = {
-    pro: 600,     // $6.00
-    design: 3000, // $30.00
-};
-
-const PLAN_PRICES_INR = {
-    pro: 49900,    // ₹499.00
-    design: 249900, // ₹2,499.00
+const RAZORPAY_PLAN_MAPPING: Record<string, Record<string, string>> = {
+    pro: {
+        monthly: "plan_S9bmYBnLA4R0r2",
+        annual: "plan_S9bzMUOjmefrRH",
+    },
+    design: {
+        monthly: "plan_S9bsPEReFFldd0",
+        annual: "plan_S9bzxeJnyBk26z",
+    }
 };
 
 export async function POST(req: Request) {
@@ -24,17 +23,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { planId, currency = "USD" } = await req.json();
+        const { planId, billingCycle = "monthly", currency = "USD" } = await req.json();
 
         if (!planId) {
             return NextResponse.json({ error: "Missing plan ID" }, { status: 400 });
-        }
-
-        const prices = currency === "INR" ? PLAN_PRICES_INR : PLAN_PRICES_USD;
-        const amount = prices[planId as keyof typeof prices];
-
-        if (!amount) {
-            return NextResponse.json({ error: "Invalid plan or currency" }, { status: 400 });
         }
 
         const razorpay = new Razorpay({
@@ -42,35 +34,44 @@ export async function POST(req: Request) {
             key_secret: process.env.RAZORPAY_KEY_SECRET!,
         });
 
-        // Receipt max length is 40. Clerk IDs are long. Shorten the receipt.
-        const shortReceipt = `rcpt_${Date.now().toString().slice(-10)}`;
+        // Use Subscriptions for INR to enable Autopay/Recurring
+        if (currency === "INR" && RAZORPAY_PLAN_MAPPING[planId]) {
+            const rzpPlanId = RAZORPAY_PLAN_MAPPING[planId][billingCycle];
 
-        const options = {
-            amount: amount,
-            currency: currency,
-            receipt: shortReceipt,
-            notes: {
-                userId: userId,
-                plan: planId,
-            },
-        };
-
-        const order = await razorpay.orders.create(options);
-
-        return NextResponse.json({
-            id: order.id,
-            amount: order.amount,
-            currency: order.currency,
-        });
-    } catch (error: any) {
-        console.error("Razorpay Create Order Error:", error);
-        return NextResponse.json({
-            error: "Failed to create order",
-            details: error.message,
-            debug: {
-                hasKeyId: !!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-                hasSecret: !!process.env.RAZORPAY_KEY_SECRET
+            if (!rzpPlanId) {
+                return NextResponse.json({ error: "Invalid plan or billing cycle" }, { status: 400 });
             }
+
+            const subscriptionOptions: any = {
+                plan_id: rzpPlanId,
+                total_count: billingCycle === "annual" ? 10 : 120, // Duration (Recurrence count)
+                quantity: 1,
+                customer_notify: 1,
+                notes: {
+                    userId: userId,
+                    plan: planId,
+                    billingCycle: billingCycle,
+                },
+            };
+
+            const subscription: any = await razorpay.subscriptions.create(subscriptionOptions);
+
+            return NextResponse.json({
+                id: subscription.id,
+                type: "subscription",
+                amount: 0,
+                currency: "INR",
+            });
+        }
+
+        // FALLBACK: One-time payment (Old Logic for non-subscription or Global)
+        return NextResponse.json({ error: "Only INR recurring payments are supported via Razorpay at this time." }, { status: 400 });
+
+    } catch (error: any) {
+        console.error("Razorpay Create Error:", error);
+        return NextResponse.json({
+            error: "Failed to initialize payment",
+            details: error.message
         }, { status: 500 });
     }
 }

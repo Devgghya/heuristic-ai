@@ -52,6 +52,10 @@ export async function GET() {
       // 3. Add last_ip to users
       await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ip VARCHAR(45)`;
 
+      // 4. Update user_usage for subscriptions
+      await sql`ALTER TABLE user_usage ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMP WITH TIME ZONE`;
+      await sql`ALTER TABLE user_usage ADD COLUMN IF NOT EXISTS subscription_id VARCHAR(255)`;
+
     } catch (migErr) {
       console.log("Migration notice (safe to ignore if columns exist):", migErr);
     }

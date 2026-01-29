@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         // Handle order.paid
         if (event.event === "order.paid") {
             const order = event.payload.order.entity;
-            const { userId, plan } = order.notes;
+            const { userId, plan, billingCycle = "monthly" } = order.notes;
 
             if (!userId || !plan) {
                 console.error("Webhook: Missing userId or plan in order notes", order.id);
@@ -58,7 +58,11 @@ export async function POST(req: Request) {
 
             const current = new Date().toISOString().slice(0, 7);
             const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + 30); // 30 Days
+            if (billingCycle === "annual") {
+                expiresAt.setFullYear(expiresAt.getFullYear() + 1); // 1 Year
+            } else {
+                expiresAt.setDate(expiresAt.getDate() + 30); // 30 Days
+            }
 
             // Idempotent Update
             // Note: We don't reset audits_used on existing rows, just update plan/limits

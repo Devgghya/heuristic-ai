@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Sparkles, CreditCard, Shield, Zap, Rocket, Loader2, Coffee, Lock } from "lucide-react";
+import { Check, Sparkles, CreditCard, Shield, Zap, Rocket, Loader2, Coffee, Lock, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -71,10 +71,48 @@ const PLANS: Plan[] = [
     },
 ];
 
-export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgrade: (planId: string) => void, planExpiresAt: string | null, currentPlan: string }) {
+import { useAuth } from "@/components/auth-provider";
+import { ContactModal } from "@/components/ContactModal";
+
+export function PricingPlans({
+    onUpgrade,
+    planExpiresAt,
+    currentPlan,
+    subscriptionId,
+    refreshUsage
+}: {
+    onUpgrade: (planId: string) => void,
+    planExpiresAt: string | null,
+    currentPlan: string,
+    subscriptionId?: string | null,
+    refreshUsage?: () => void
+}) {
+    const { user } = useAuth();
     const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+    const [cancelling, setCancelling] = useState(false);
     const [region, setRegion] = useState<"IN" | "GLOBAL">("GLOBAL");
+    const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+
+    const handleCancelSubscription = async () => {
+        if (!window.confirm("Are you sure you want to cancel your subscription? You'll still have access until the current period ends.")) return;
+
+        setCancelling(true);
+        try {
+            const res = await fetch("/api/payment/cancel-subscription", { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                alert("Subscription cancelled successfully.");
+                if (refreshUsage) refreshUsage();
+            } else {
+                alert(data.error || "Failed to cancel subscription.");
+            }
+        } catch (err) {
+            alert("An error occurred while cancelling.");
+        } finally {
+            setCancelling(false);
+        }
+    };
 
     useEffect(() => {
         // 1. Instant Timezone Check (Fallback/Fastest)
@@ -109,6 +147,17 @@ export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgr
     }, []);
 
     const handleSubscribe = async (planId: string) => {
+        if (!user) {
+            alert("Please sign in to upgrade your plan.");
+            window.location.href = "/login?redirect=/dashboard?tab=pricing";
+            return;
+        }
+
+        if (planId === "enterprise") {
+            setIsContactModalOpen(true);
+            return;
+        }
+
         if (region === "GLOBAL") {
             // Placeholder for Lemon Squeezy / Global Payment
             alert("Global payments via Lemon Squeezy are coming soon!");
@@ -131,30 +180,32 @@ export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgr
             const res = await fetch("/api/payment/create-order", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ planId, currency: region === "IN" ? "INR" : "USD" }),
+                body: JSON.stringify({ planId, billingCycle, currency: region === "IN" ? "INR" : "USD" }),
             });
 
             if (!res.ok) {
                 const data = await res.json();
                 throw new Error(data.details || data.error || "Failed to create order");
             }
-            const order = await res.json();
+            const paymentData = await res.json();
 
             // 2. Initialize Razorpay
-            const options = {
+            const options: any = {
                 key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-                amount: order.amount,
-                currency: order.currency,
                 name: "Heuristic AI",
                 description: `Upgrade to ${planId.charAt(0).toUpperCase() + planId.slice(1)} Plan`,
-                order_id: order.id,
                 handler: async function (response: any) {
                     // 3. Verify Payment
                     try {
                         const verifyRes = await fetch("/api/payment/verify", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ ...response, planId }),
+                            body: JSON.stringify({
+                                ...response,
+                                planId,
+                                billingCycle,
+                                type: paymentData.type === 'subscription' ? 'subscription' : 'order'
+                            }),
                         });
 
                         if (verifyRes.ok) {
@@ -174,13 +225,21 @@ export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgr
                     }
                 },
                 prefill: {
-                    name: "", // Can be filled if we have user details
-                    email: "",
+                    name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+                    email: user?.email || "",
                 },
                 theme: {
                     color: "#6366f1",
                 },
             };
+
+            if (paymentData.type === 'subscription') {
+                options.subscription_id = paymentData.id;
+            } else {
+                options.order_id = paymentData.id;
+                options.amount = paymentData.amount;
+                options.currency = paymentData.currency;
+            }
 
             const rzp1 = new window.Razorpay(options);
             rzp1.open();
@@ -287,7 +346,22 @@ export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgr
                                         : plan.price
                                 )}
                             </span>
-                            {plan.period && <span className="text-muted-text font-medium">{plan.period}</span>}
+                            {plan.period && (
+                                <div className="flex flex-col">
+                                    <span className="text-muted-text font-medium text-sm leading-none">
+                                        {billingCycle === "annual" ? "/mo" : "/month"}
+                                    </span>
+                                    {billingCycle === "annual" && plan.id !== "free" && plan.id !== "enterprise" && (
+                                        <span className="text-[10px] text-accent-primary font-bold mt-1 uppercase tracking-tighter">
+                                            Billed {region === "IN" ? "₹" : "$"}{
+                                                region === "IN"
+                                                    ? (parseInt(plan.priceInr.replace("₹", "")) * 12 * 0.8).toFixed(0)
+                                                    : (parseInt(plan.price.replace("$", "")) * 12 * 0.8).toFixed(0)
+                                            }/yr
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <ul className="space-y-4 mb-8">
@@ -303,26 +377,43 @@ export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgr
                             ))}
                         </ul>
 
-                        <button
-                            onClick={() => handleSubscribe(plan.id)}
-                            disabled={plan.id === "free" || loadingPlan === plan.id}
-                            className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${plan.id === "free"
-                                ? "bg-foreground/5 text-muted-text cursor-default"
-                                : plan.recommended
-                                    ? "bg-accent-primary hover:bg-accent-primary/90 text-white shadow-lg shadow-accent-primary/25 hover:shadow-xl hover:shadow-accent-primary/40 hover:scale-[1.02]"
-                                    : "bg-foreground text-background hover:bg-foreground/90 hover:scale-[1.02]"
-                                }`}
+                        {currentPlan === plan.id && subscriptionId ? (
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold text-sm">
+                                    <Check className="w-4 h-4" />
+                                    Active Plan
+                                </div>
+                                <button
+                                    onClick={handleCancelSubscription}
+                                    disabled={cancelling}
+                                    className="w-full py-2 text-xs font-bold text-red-500 hover:text-red-600 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    {cancelling ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                    Cancel Subscription
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => handleSubscribe(plan.id)}
+                                disabled={plan.id === "free" || loadingPlan === plan.id}
+                                className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${plan.id === "free"
+                                    ? "bg-foreground/5 text-muted-text cursor-default"
+                                    : plan.recommended
+                                        ? "bg-accent-primary hover:bg-accent-primary/90 text-white shadow-lg shadow-accent-primary/25 hover:shadow-xl hover:shadow-accent-primary/40 hover:scale-[1.02]"
+                                        : "bg-foreground text-background hover:bg-foreground/90 hover:scale-[1.02]"
+                                    }`}
 
-                        >
-                            {loadingPlan === plan.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <>
-                                    {plan.id !== "free" && <CreditCard className="w-4 h-4" />}
-                                    {plan.cta}
-                                </>
-                            )}
-                        </button>
+                            >
+                                {loadingPlan === plan.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <>
+                                        {plan.id !== "free" && <CreditCard className="w-4 h-4" />}
+                                        {plan.cta}
+                                    </>
+                                )}
+                            </button>
+                        )}
                     </div>
                 ))}
             </div>
@@ -342,53 +433,63 @@ export function PricingPlans({ onUpgrade, planExpiresAt, currentPlan }: { onUpgr
                 <p className="text-muted-text mb-6">
                     Need more than 5 seats or custom API integration? We offer tailored solutions for large design teams.
                 </p>
-                <button className="text-accent-primary font-bold hover:underline">Contact Enterprise Support →</button>
-            </div>
+                <button
+                    onClick={() => handleSubscribe('enterprise')}
+                    className="text-accent-primary font-bold hover:underline"
+                >
+                    Contact Enterprise Support →
+                </button>
+            </div >
 
             {/* Razorpay Backdrop & Loading State */}
             <AnimatePresence>
-                {loadingPlan && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6 text-center"
-                    >
-                        {/* Blurred Backdrop */}
-                        <div className="absolute inset-0 bg-background/60 backdrop-blur-xl" />
-
-                        {/* Loading Content */}
+                {
+                    loadingPlan && (
                         <motion.div
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            className="relative z-10 max-w-sm w-full bg-card border border-border-dim p-8 rounded-3xl shadow-2xl"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6 text-center"
                         >
-                            <div className="w-16 h-16 bg-accent-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                                <Loader2 className="w-8 h-8 text-accent-primary animate-spin" />
-                            </div>
-                            <h3 className="text-xl font-bold text-foreground mb-2">Secure Checkout</h3>
-                            <p className="text-muted-text text-sm mb-6">
-                                {region === "IN"
-                                    ? "We're securely initializing your session with Razorpay. Please do not refresh."
-                                    : "We're securely initializing your session with Lemon Squeezy. Please do not refresh."
-                                }
-                            </p>
-                            <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-text">
-                                <Lock className="w-3 h-3" /> 256-bit SSL Encryption
-                            </div>
-                        </motion.div>
+                            {/* Blurred Backdrop */}
+                            <div className="absolute inset-0 bg-background/60 backdrop-blur-xl" />
 
-                        {/* Emergency Close (Hidden but accessible if someone gets stuck) */}
-                        <button
-                            onClick={() => setLoadingPlan(null)}
-                            className="absolute bottom-10 text-muted-text hover:text-foreground text-xs font-bold transition-colors"
-                        >
-                            Cancel Initialization
-                        </button>
-                    </motion.div>
-                )}
+                            {/* Loading Content */}
+                            <motion.div
+                                initial={{ scale: 0.9, y: 20 }}
+                                animate={{ scale: 1, y: 0 }}
+                                className="relative z-10 max-w-sm w-full bg-card border border-border-dim p-8 rounded-3xl shadow-2xl"
+                            >
+                                <div className="w-16 h-16 bg-accent-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                                    <Loader2 className="w-8 h-8 text-accent-primary animate-spin" />
+                                </div>
+                                <h3 className="text-xl font-bold text-foreground mb-2">Secure Checkout</h3>
+                                <p className="text-muted-text text-sm mb-6">
+                                    {region === "IN"
+                                        ? "We're securely initializing your session with Razorpay. Please do not refresh."
+                                        : "We're securely initializing your session with Lemon Squeezy. Please do not refresh."
+                                    }
+                                </p>
+                                <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-text">
+                                    <Lock className="w-3 h-3" /> 256-bit SSL Encryption
+                                </div>
+                            </motion.div>
+
+                            {/* Emergency Close (Hidden but accessible if someone gets stuck) */}
+                            <button
+                                onClick={() => setLoadingPlan(null)}
+                                className="absolute bottom-10 text-muted-text hover:text-foreground text-xs font-bold transition-colors"
+                            >
+                                Cancel Initialization
+                            </button>
+                        </motion.div>
+                    )
+                }
             </AnimatePresence>
-        </div>
+            <ContactModal
+                isOpen={isContactModalOpen}
+                onClose={() => setIsContactModalOpen(false)}
+            />
+        </div >
     );
 }
-

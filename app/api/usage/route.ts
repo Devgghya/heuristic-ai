@@ -27,22 +27,14 @@ type Usage = {
   period: string;
   auditLimit?: number | null;
   planExpiresAt?: string | null;
+  subscriptionId?: string | null;
 };
 
 async function ensureUsage(userId: string): Promise<Usage> {
   const current = periodKey();
-  await sql`
-    CREATE TABLE IF NOT EXISTS user_usage (
-      user_id VARCHAR(255) PRIMARY KEY,
-      plan VARCHAR(20) DEFAULT 'free',
-      audits_used INTEGER DEFAULT 0,
-      period_key VARCHAR(7) NOT NULL,
-      token_limit INTEGER DEFAULT 2000,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
+
   const { rows } = await sql`
-    SELECT plan, audits_used, period_key, plan_expires_at
+    SELECT plan, audits_used, period_key, plan_expires_at, subscription_id
     FROM user_usage
     WHERE user_id = ${userId}
   `;
@@ -72,16 +64,18 @@ async function ensureUsage(userId: string): Promise<Usage> {
   // --- EXPIRATION CHECK ---
   let plan = (row.plan || "free") as Usage["plan"];
   let planExpiresAt = row.plan_expires_at;
+  let subscriptionId = row.subscription_id;
 
   if (plan !== 'free' && planExpiresAt && new Date(planExpiresAt) < new Date()) {
     // Plan expired! Downgrade to free
     await sql`
       UPDATE user_usage
-      SET plan = 'free', plan_expires_at = NULL, token_limit = ${FREE_MAX_TOKENS}, updated_at = NOW()
+      SET plan = 'free', plan_expires_at = NULL, subscription_id = NULL, token_limit = ${FREE_MAX_TOKENS}, updated_at = NOW()
       WHERE user_id = ${userId}
     `;
     plan = 'free';
     planExpiresAt = null;
+    subscriptionId = null;
   }
 
   let tokenLimit = FREE_MAX_TOKENS;
@@ -98,7 +92,7 @@ async function ensureUsage(userId: string): Promise<Usage> {
   else if (plan === "plus") auditLimit = PLUS_AUDIT_LIMIT;
   else if (plan === "pro") auditLimit = PRO_AUDIT_LIMIT;
 
-  return { plan, auditsUsed, tokenLimit, period: storedPeriod, auditLimit, planExpiresAt };
+  return { plan, auditsUsed, tokenLimit, period: storedPeriod, auditLimit, planExpiresAt, subscriptionId };
 }
 
 export async function GET() {
@@ -121,6 +115,7 @@ export async function GET() {
     token_limit: usage.tokenLimit,
     period_key: usage.period,
     plan_expires_at: usage.planExpiresAt,
+    subscription_id: usage.subscriptionId
   });
 }
 
