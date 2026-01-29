@@ -659,15 +659,21 @@ function DashboardContent() {
       </AnimatePresence>
 
       {/* MOBILE NAVIGATION BAR */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-card/80 backdrop-blur-lg border-t border-border-dim px-6 py-3 flex justify-around items-center md:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-card/80 backdrop-blur-lg border-t border-border-dim px-2 py-3 flex justify-around items-center md:hidden">
+        <Link
+          href="/"
+          className="flex flex-col items-center gap-1 transition-all text-muted-text hover:text-foreground"
+        >
+          <HomeIcon className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Home</span>
+        </Link>
         <button
           onClick={() => setActiveTab("dashboard")}
           className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'text-muted-text'}`}
         >
           <LayoutDashboard className="w-5 h-5" />
-          <span className="text-[10px] font-bold">New Audit</span>
+          <span className="text-[10px] font-bold">Audit</span>
         </button>
-        <ThemeToggle />
         <button
           onClick={() => setActiveTab("history")}
           className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-accent-primary shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'text-muted-text'}`}
@@ -682,6 +688,13 @@ function DashboardContent() {
           <CreditCard className="w-5 h-5" />
           <span className="text-[10px] font-bold">Pricing</span>
         </button>
+        <Link
+          href="/account"
+          className="flex flex-col items-center gap-1 transition-all text-muted-text hover:text-foreground"
+        >
+          <User className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Account</span>
+        </Link>
       </nav>
 
       {/* SIDEBAR (Desktop only) */}
