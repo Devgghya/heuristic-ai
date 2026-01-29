@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, CheckCircle, AlertCircle, Loader2, Download, Lock,
   ChevronDown, LogOut, Zap, LayoutDashboard, Home as HomeIcon, History as HistoryIcon,
-  Plus, X, Trash2, User, Sparkles, CreditCard, ArrowRight, ArrowLeft, ExternalLink, GitCompare, Eye, Shield
+  Plus, X, Trash2, User, Sparkles, CreditCard, ArrowRight, ArrowLeft, ExternalLink, GitCompare, Eye, Shield, Rocket, Coffee
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -768,9 +768,27 @@ function DashboardContent() {
           {activeTab === "dashboard" && (
             <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}>
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6 mb-8 md:mb-12">
-                <div>
+                <div className="flex-1">
                   <h1 className="text-xl md:text-3xl font-bold text-foreground mb-1 md:mb-2">{isSignedIn ? `Welcome back, ${user.firstName}` : "Design Audit Dashboard"}</h1>
-                  <p className="text-muted-text text-xs md:text-sm">Upload your UI to get expert feedback instantly.</p>
+                  <p className="text-muted-text text-xs md:text-sm mb-3">Upload your UI to get expert feedback instantly.</p>
+
+                  {/* Current Plan Badge */}
+                  {isSignedIn && (
+                    <div className={`inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full border text-xs md:text-sm font-bold transition-all ${plan === 'enterprise' ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400' :
+                      plan === 'design' ? 'bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400' :
+                        plan === 'pro' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400' :
+                          plan === 'free' ? 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400' :
+                            'bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400'
+                      }`}>
+                      {plan === 'enterprise' ? <Rocket className="w-3 h-3 md:w-4 md:h-4" /> :
+                        plan === 'design' ? <Sparkles className="w-3 h-3 md:w-4 md:h-4" /> :
+                          plan === 'pro' ? <Zap className="w-3 h-3 md:w-4 md:h-4" /> :
+                            plan === 'free' ? <Coffee className="w-3 h-3 md:w-4 md:h-4" /> :
+                              <User className="w-3 h-3 md:w-4 md:h-4" />
+                      }
+                      <span>Current Plan: {plan.charAt(0).toUpperCase() + plan.slice(1)}</span>
+                    </div>
+                  )}
                 </div>
                 {!isPaid && isSignedIn && (
                   <button onClick={() => setActiveTab("pricing")} className="group flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs rounded-full shadow-lg shadow-orange-500/20 hover:scale-110 hover:shadow-xl hover:shadow-orange-500/30 transition-all duration-300"><Sparkles className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" /> Upgrade to Pro</button>
