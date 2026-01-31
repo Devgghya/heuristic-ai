@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         await sql`DELETE FROM verification_codes WHERE email = ${email}`;
 
         // Create Session
-        const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "devkulshrestha27@gmail.com").split(",");
+        const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "admin@uixscore.com").split(",");
         const isAdmin = ADMIN_EMAILS.includes(user.email);
 
         const token = await createToken({
