@@ -365,7 +365,7 @@ function DashboardContent() {
       // Header
       // Logo
       try {
-        const logoUrl = window.location.origin + "/heuristic-logo.png";
+        const logoUrl = window.location.origin + "/uixscore-logo.png";
         const logoImg = new Image();
         logoImg.src = logoUrl;
         await new Promise((resolve) => {
@@ -377,12 +377,12 @@ function DashboardContent() {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(22);
         doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
-        doc.text("Heuristic.ai", 32, 24);
+        doc.text("UIXScore", 32, 24);
       } catch (e) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(22);
         doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
-        doc.text("Heuristic.ai", 15, 24);
+        doc.text("UIXScore", 15, 24);
       }
 
       // Title
@@ -586,7 +586,7 @@ function DashboardContent() {
           doc.setPage(i);
           doc.setFontSize(8);
           doc.setTextColor(150, 150, 150);
-          doc.text("Generative AI Audit by Heuristic.ai", pageWidth - 15, pageHeight - 5, { align: "right" });
+          doc.text("Generative AI Audit by UIXScore", pageWidth - 15, pageHeight - 5, { align: "right" });
         }
       }
 
@@ -604,7 +604,7 @@ function DashboardContent() {
 
       const siteName = getSafeHostname(dataToUse.target_url);
       const cleanTitle = (dataToUse.ui_title || siteName).replace(/[^a-zA-Z0-9 ]/g, "").trim();
-      const filename = `${cleanTitle} Heuristic Audit - Heuristic-ai.pdf`;
+      const filename = `${cleanTitle} UIXScore Audit - UIXScore.pdf`;
 
       doc.save(filename);
 
@@ -702,8 +702,8 @@ function DashboardContent() {
         <div className="p-6">
           <div className="flex items-center justify-between mb-10">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><Zap className="w-5 h-5 text-white" /></div>
-              <span className="text-xl font-bold text-foreground tracking-tight">Heuristic<span className="text-indigo-500 dark:text-indigo-400">.ai</span></span>
+              <img src="/uixscore-logo.png" alt="UIXScore" className="w-8 h-8 rounded-lg object-contain" />
+              <span className="text-xl font-bold text-foreground tracking-tight">UIXScore<span className="text-indigo-500 dark:text-indigo-400"></span></span>
             </div>
             <ThemeToggle />
           </div>
@@ -838,8 +838,11 @@ function DashboardContent() {
                         </label>
                       </div>
                     ) : (
-                      <label className="border-2 border-dashed border-border-dim rounded-2xl h-48 flex flex-col items-center justify-center hover:bg-foreground/5 hover:border-accent-primary transition-all cursor-pointer">
-                        <Upload className="w-8 h-8 text-muted-text mb-4" /><p className="text-foreground font-medium">Click to Upload or Paste (Ctrl+V)</p><input type="file" multiple onChange={handleFileChange} className="hidden" />
+                      <label className="border-2 border-dashed border-indigo-200 dark:border-indigo-800 bg-slate-50 dark:bg-slate-900/50 rounded-2xl h-48 flex flex-col items-center justify-center hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer group">
+                        <Upload className="w-8 h-8 text-indigo-500 dark:text-indigo-400 mb-4 group-hover:scale-110 transition-transform" />
+                        <p className="text-foreground font-bold text-lg">Click to Upload</p>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">or Paste from Clipboard (Ctrl+V)</p>
+                        <input type="file" multiple onChange={handleFileChange} className="hidden" />
                       </label>
                     )
                   ) : (
@@ -855,15 +858,20 @@ function DashboardContent() {
                   <div className="relative w-full md:flex-1 md:min-w-[300px]">
                     <button
                       onClick={() => !isPaid ? alert("Upgrade to Pro to unlock WCAG and Gestalt frameworks!") : setFrameworkMenuOpen(!frameworkMenuOpen)}
-                      className="w-full bg-background border border-border-dim rounded-xl px-4 py-3 text-sm text-foreground flex justify-between items-center hover:bg-foreground/5 transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary/50"
+                      className="w-full bg-background border border-border-dim rounded-xl px-4 py-3 text-sm text-foreground flex justify-between items-center hover:bg-foreground/5 transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary/50 relative group"
                     >
-                      <span className="truncate mr-2">
+                      <span className="truncate mr-2 font-medium">
                         {framework === "nielsen" && "Nielsen's Heuristics"}
                         {framework === "wcag" && "WCAG 2.1 (Accessibility)"}
                         {framework === "gestalt" && "Gestalt Principles"}
                       </span>
                       {!isPaid && <Lock className="w-3 h-3 text-amber-500 ml-2" />}
                       <ChevronDown className={`w-4 h-4 text-muted-text transition-transform ${frameworkMenuOpen ? "rotate-180" : ""}`} />
+
+                      {/* Tooltip for User Guidance */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                        Select an audit framework
+                      </div>
                     </button>
 
                     <AnimatePresence>
@@ -895,7 +903,7 @@ function DashboardContent() {
                       )}
                     </AnimatePresence>
                   </div>
-                  <button onClick={handleAudit} disabled={loading} className="group w-full md:w-auto md:min-w-[200px] md:px-10 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-accent-primary/20 hover:shadow-xl hover:shadow-accent-primary/40 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 py-4 md:py-3">
+                  <button onClick={handleAudit} disabled={loading} className="group w-full md:w-auto md:min-w-[200px] md:px-10 bg-indigo-700 hover:bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-indigo-700/20 hover:shadow-xl hover:shadow-indigo-600/40 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 py-4 md:py-3">
                     {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <><span>Run Deep Audit</span><ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-300" /></>}
                   </button>
                 </div>

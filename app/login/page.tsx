@@ -57,12 +57,12 @@ export default function LoginPage() {
                     <motion.div
                         initial={{ scale: 0.8 }}
                         animate={{ scale: 1 }}
-                        className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(79,70,229,0.3)]"
+                        className="mx-auto mb-6"
                     >
-                        <Sparkles className="w-8 h-8 text-white" />
+                        <img src="/uixscore-logo.png" alt="UIXScore" className="w-16 h-16 rounded-2xl object-contain shadow-[0_0_30px_rgba(79,70,229,0.3)]" />
                     </motion.div>
                     <h1 className="text-3xl font-black text-white mb-2 tracking-tight">Welcome Back</h1>
-                    <p className="text-slate-400">Log in to your Heuristic.ai account</p>
+                    <p className="text-slate-400">Log in to your UIXScore account</p>
                 </div>
 
                 <div className="bg-[#121214] border border-white/10 rounded-3xl p-8 shadow-2xl backdrop-blur-xl">
@@ -110,7 +110,7 @@ export default function LoginPage() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 group disabled:opacity-50"
+                            className="w-full py-4 bg-indigo-700 hover:bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-700/20 flex items-center justify-center gap-2 group disabled:opacity-50"
                         >
                             {loading ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />

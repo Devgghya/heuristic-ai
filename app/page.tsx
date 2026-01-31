@@ -74,10 +74,8 @@ export default function HomePage() {
         {/* Navigation Header */}
         <div className="relative z-20 max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8 flex justify-between items-center">
           <div className="flex items-center gap-2 md:gap-3">
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
-              <Zap className="w-4 h-4 md:w-5 md:h-5 text-white" />
-            </div>
-            <h1 className="text-lg md:text-2xl font-bold text-foreground">Heuristic<span className="text-accent-primary">.ai</span></h1>
+            <img src="/uixscore-logo.png" alt="UIXScore" className="w-8 h-8 md:w-10 md:h-10 rounded-xl object-contain" />
+            <h1 className="text-lg md:text-2xl font-bold text-foreground">UIXScore<span className="text-accent-primary"></span></h1>
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
@@ -85,7 +83,7 @@ export default function HomePage() {
             {!loading && (
               <>
                 {!user ? (
-                  <Link href="/login" className="px-3 md:px-5 py-2 md:py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs md:text-sm transition-all shadow-lg shadow-indigo-600/20">
+                  <Link href="/login" className="px-3 md:px-5 py-2 md:py-2.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg font-bold text-xs md:text-sm transition-all shadow-lg shadow-indigo-700/20">
                     Sign In
                   </Link>
                 ) : (
@@ -202,7 +200,7 @@ export default function HomePage() {
       <footer className="border-t border-border-dim">
         <div className="max-w-6xl mx-auto px-6 py-8 text-muted-text text-sm">
           <p>
-            © {new Date().getFullYear()} Heuristic.ai • Built by <a href="https://devu.is-great.net" target="_blank" rel="noopener noreferrer" className="hover:text-accent-primary transition-colors">Devgghya Kulshrestha</a>
+            © {new Date().getFullYear()} UIXScore • Built by <a href="https://devu.is-great.net" target="_blank" rel="noopener noreferrer" className="hover:text-accent-primary transition-colors">Devgghya Kulshrestha</a>
           </p>
         </div>
       </footer>

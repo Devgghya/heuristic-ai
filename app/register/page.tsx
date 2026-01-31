@@ -126,15 +126,15 @@ export default function RegisterPage() {
                     <motion.div
                         initial={{ scale: 0.8 }}
                         animate={{ scale: 1 }}
-                        className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(79,70,229,0.3)]"
+                        className="mx-auto mb-6"
                     >
-                        <Sparkles className="w-8 h-8 text-white" />
+                        <img src="/uixscore-logo.png" alt="UIXScore" className="w-16 h-16 rounded-2xl object-contain shadow-[0_0_30px_rgba(79,70,229,0.3)]" />
                     </motion.div>
                     <h1 className="text-3xl font-black text-white mb-2 tracking-tight">
                         {otpSent ? "Verify Email" : "Create Account"}
                     </h1>
                     <p className="text-slate-400">
-                        {otpSent ? `Enter the code sent to ${email}` : "Join the Heuristic.ai design community"}
+                        {otpSent ? `Enter the code sent to ${email}` : "Join the UIXScore design community"}
                     </p>
                 </div>
 
@@ -169,7 +169,7 @@ export default function RegisterPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 group disabled:opacity-50"
+                                className="w-full py-4 bg-indigo-700 hover:bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-700/20 flex items-center justify-center gap-2 group disabled:opacity-50"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -270,7 +270,7 @@ export default function RegisterPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 group disabled:opacity-50 mt-4"
+                                className="w-full py-4 bg-indigo-700 hover:bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-700/20 flex items-center justify-center gap-2 group disabled:opacity-50 mt-4"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />

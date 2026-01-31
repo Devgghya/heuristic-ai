@@ -1,6 +1,6 @@
-# Heuristic.ai ⚡️
+# UIXScore ⚡️
 
-Heuristic.ai is a powerful, AI-driven design auditing platform that helps designers and developers identify UX issues and accessibility gaps in seconds. Whether you're auditing a live URL or a screenshot, Heuristic.ai provides actionable feedback based on industry-standard frameworks like Nielsen's Heuristics and WCAG 2.1.
+UIXScore is a powerful, AI-driven design auditing platform that helps designers and developers identify UX issues and accessibility gaps in seconds. Whether you're auditing a live URL or a screenshot, UIXScore provides actionable feedback based on industry-standard frameworks like Nielsen's Heuristics and WCAG 2.1.
 
 ## 🚀 Features
 
@@ -27,8 +27,8 @@ Heuristic.ai is a powerful, AI-driven design auditing platform that helps design
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/devgghya/heuristic-ai.git
-cd heuristic-ai
+git clone https://github.com/Devgghya/UIXScore.git
+cd uixscore
 ```
 
 ### 2. Install dependencies
@@ -99,4 +99,4 @@ Access the restricted admin area at `/admin`. Note that access is hardcoded to s
 ## 📄 License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-Developed with ❤️ by the Heuristic.ai Team.
+Developed with ❤️ by the UIXScore Team.

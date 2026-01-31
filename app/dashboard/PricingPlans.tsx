@@ -192,7 +192,7 @@ export function PricingPlans({
             // 2. Initialize Razorpay
             const options: any = {
                 key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-                name: "Heuristic AI",
+                name: "UIXScore",
                 description: `Upgrade to ${planId.charAt(0).toUpperCase() + planId.slice(1)} Plan`,
                 handler: async function (response: any) {
                     // 3. Verify Payment

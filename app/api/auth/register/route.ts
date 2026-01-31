@@ -54,15 +54,15 @@ export async function POST(req: Request) {
         // Send OTP Email
         await sendEmail({
             to: user.email,
-            subject: "Verify your email - Heuristic AI",
+            subject: "Verify your email - UIXScore",
             html: `
                 <!DOCTYPE html>
                 <html>
                 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0a0a0a; color: #f8fafc; margin: 0; padding: 40px;">
                     <div style="max-width: 500px; margin: 0 auto; background-color: #121214; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden;">
                         <div style="padding: 32px; text-align: center; border-bottom: 1px solid #1e293b;">
-                            <img src="${process.env.NEXT_PUBLIC_APP_URL || 'https://heuristic.ai'}/heuristic-logo.png" alt="Heuristic.ai" width="48" height="48" style="border-radius: 8px;" />
-                            <h1 style="margin: 16px 0 0; font-size: 24px; font-weight: 800; color: #f8fafc;">Heuristic<span style="color: #818cf8;">.ai</span></h1>
+                            <img src="${process.env.NEXT_PUBLIC_APP_URL || 'https://uixscore.com'}/uixscore-logo.png" alt="UIXScore" width="48" height="48" style="border-radius: 8px;" />
+                            <h1 style="margin: 16px 0 0; font-size: 24px; font-weight: 800; color: #f8fafc;">UIXScore<span style="color: #818cf8;"></span></h1>
                         </div>
                         <div style="padding: 40px 32px; text-align: center;">
                             <h2 style="margin: 0 0 16px; font-size: 20px; font-weight: 600; color: #f8fafc;">Verify your email address</h2>
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
                             <p style="margin: 0; font-size: 13px; color: #64748b;">If you didn't request this code, you can safely ignore this email.</p>
                         </div>
                         <div style="background-color: #0a0a0a; padding: 20px; text-align: center; border-top: 1px solid #1e293b;">
-                             <p style="margin: 0; font-size: 11px; color: #475569;">&copy; ${new Date().getFullYear()} Heuristic.ai • All rights reserved</p>
+                             <p style="margin: 0; font-size: 11px; color: #475569;">&copy; ${new Date().getFullYear()} UIXScore • All rights reserved</p>
                         </div>
                     </div>
                 </body>

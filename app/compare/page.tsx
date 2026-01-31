@@ -189,7 +189,7 @@ export default function ComparePage() {
       // Logo
       // Logo
       try {
-        const logoUrl = window.location.origin + "/heuristic-logo.png";
+        const logoUrl = window.location.origin + "/uixscore-logo.png";
         const logoImg = new Image();
         logoImg.src = logoUrl;
         await new Promise((resolve) => {
@@ -202,16 +202,12 @@ export default function ComparePage() {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(32);
         doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
-        doc.text("Heuristic", 45, 40);
-        doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
-        doc.text(".ai", 45 + doc.getTextWidth("Heuristic"), 40);
+        doc.text("UIXScore", 45, 40);
       } catch (e) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(32);
         doc.setTextColor(TEXT_MAIN.r, TEXT_MAIN.g, TEXT_MAIN.b);
-        doc.text("Heuristic", 20, 40);
-        doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
-        doc.text(".ai", 20 + doc.getTextWidth("Heuristic"), 40);
+        doc.text("UIXScore", 20, 40);
       }
 
       // Title
@@ -391,10 +387,10 @@ export default function ComparePage() {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.setTextColor(150, 150, 150);
-        doc.text("Heuristic.ai Benchmark Report", pageWidth - 20, pageHeight - 10, { align: "right" });
+        doc.text("UIXScore Benchmark Report", pageWidth - 20, pageHeight - 10, { align: "right" });
       }
 
-      doc.save("Heuristic_Comparison_Report.pdf");
+      doc.save("UIXScore_Comparison_Report.pdf");
 
     } catch (error) {
       console.error("Error generating PDF:", error);

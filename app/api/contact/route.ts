@@ -13,7 +13,7 @@ export async function POST(req: Request) {
 
         const subject = `New Enterprise Inquiry: ${plan} Plan`;
         const html = `
-            <h2>New Inquiry from Heuristic AI</h2>
+            <h2>New Inquiry from UIXScore</h2>
             <p><strong>Name:</strong> ${name}</p>
             <p><strong>Email:</strong> ${email}</p>
             <p><strong>Company:</strong> ${company || "N/A"}</p>
