@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 
 // Ensure Node.js runtime for Buffer and database libraries
 export const runtime = "nodejs";
+export const maxDuration = 60; // Increase timeout to 60 seconds for cold starts
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";

@@ -251,7 +251,7 @@ function DashboardContent() {
   }, []);
 
 
-  // --- MAIN AUDIT FUNCTION ---
+  // --- MAIN AUDIT FUNCTION WITH RETRY LOGIC ---
   async function handleAudit() {
     if (mode === "upload" && files.length === 0) return;
     if ((mode === "url" || mode === "crawler" || mode === "accessibility") && !urlInput) return;
@@ -278,51 +278,84 @@ function DashboardContent() {
       else files.forEach((file) => formData.append("file", file));
     }
 
-    try {
-      const res = await fetch("/api/audit", { method: "POST", body: formData });
-      if (res.status === 402) {
-        setActiveTab("pricing");
-        return;
-      }
+    // Retry logic with exponential backoff
+    const MAX_RETRIES = 3;
+    const RETRY_DELAYS = [0, 2000, 4000]; // 0ms, 2s, 4s
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Request failed");
-      }
-
-      if (data.audit || data.score !== undefined) {
-        setAnalysisData(data); // STORE FULL DATA
-
-        // Update Local Limits
-        if (data.limits) {
-          setPlan(data.limits.plan || "guest");
-          if (typeof data.limits.audits_used === "number") setAuditsUsed(data.limits.audits_used);
-          setAuditLimit(data.limits.limit === null || data.limits.limit === undefined ? null : data.limits.limit);
-
-        } else if (isSignedIn) {
-          setAuditsUsed((prev) => prev + 1);
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        // Wait before retry (except first attempt)
+        if (attempt > 0) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt]));
         }
 
-        if (isSignedIn) {
-          const newRecord: HistoryRecord = {
-            id: data.id || Date.now().toString(),
-            ui_title: data.ui_title,
-            date: new Date().toLocaleDateString(),
-            preview: data.image_url,
-            analysis: data, // Store full object
-            framework: framework
-          };
-          setHistory([newRecord, ...history]);
+        const res = await fetch("/api/audit", { method: "POST", body: formData });
+
+        if (res.status === 402) {
+          setActiveTab("pricing");
+          setLoading(false);
+          return;
         }
-      } else if (data.error) {
-        alert(data.error);
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          // Retry on server errors or timeouts
+          if (res.status >= 500 && attempt < MAX_RETRIES - 1) {
+            console.log(`Attempt ${attempt + 1} failed, retrying...`);
+            continue; // Retry
+          }
+          throw new Error(data.error || "Request failed");
+        }
+
+        // Success - process the response
+        if (data.audit || data.score !== undefined) {
+          setAnalysisData(data); // STORE FULL DATA
+
+          // Update Local Limits
+          if (data.limits) {
+            setPlan(data.limits.plan || "guest");
+            if (typeof data.limits.audits_used === "number") setAuditsUsed(data.limits.audits_used);
+            setAuditLimit(data.limits.limit === null || data.limits.limit === undefined ? null : data.limits.limit);
+
+          } else if (isSignedIn) {
+            setAuditsUsed((prev) => prev + 1);
+          }
+
+          if (isSignedIn) {
+            const newRecord: HistoryRecord = {
+              id: data.id || Date.now().toString(),
+              ui_title: data.ui_title,
+              date: new Date().toLocaleDateString(),
+              preview: data.image_url,
+              analysis: data, // Store full object
+              framework: framework
+            };
+            setHistory([newRecord, ...history]);
+          }
+
+          setLoading(false);
+          return; // Success - exit function
+        } else if (data.error) {
+          alert(data.error);
+          setLoading(false);
+          return;
+        }
+      } catch (error: any) {
+        console.error(`Attempt ${attempt + 1} error:`, error);
+
+        // If this is the last attempt, show error to user
+        if (attempt === MAX_RETRIES - 1) {
+          alert(`Error analyzing: ${error.message || "Unknown error"}. Please try again.`);
+          setLoading(false);
+          return;
+        }
+        // Otherwise, continue to next retry
+        console.log(`Retrying in ${RETRY_DELAYS[attempt + 1]}ms...`);
       }
-    } catch (error: any) {
-      console.error(error);
-      alert(`Error analyzing: ${error.message || "Unknown error"}. Check console.`);
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(false);
   }
 
   // --- PDF ENGINE (HYBRID) ---
