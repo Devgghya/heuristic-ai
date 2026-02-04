@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Sparkles, CreditCard, Shield, Zap, Rocket, Loader2, Coffee, Lock, X } from "lucide-react";
+import { Check, Sparkles, CreditCard, Shield, Zap, Rocket, Loader2, Coffee, Lock, X, User, ArrowRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -24,52 +24,56 @@ interface Plan {
 
 const PLANS: Plan[] = [
     {
-        id: "pro",
-        name: "Pro Analyst",
-        price: "$6",
-        priceInr: "₹499",
-        period: "/month",
-        features: [
-            "60 Audits per month",
-            "All Frameworks (WCAG, Gestalt)",
-            "Download Official PDF Reports",
-            "Unlimited History",
-        ],
-        cta: "Upgrade to Pro",
-        color: "blue",
-    },
-    {
-        id: "design",
-        name: "Design Studio",
-        price: "$30",
-        priceInr: "₹2499",
-        period: "/month",
+        id: "free",
+        name: "Free",
+        price: "$0",
+        priceInr: "₹0",
+        period: "/forever",
         features: [
             "Unlimited Audits",
-            "Priority Faster Processing",
-            "Everything in Pro",
-            "Team Dashboard",
+            "5 PDF Downloads per month",
+            "All Frameworks (WCAG, Gestalt)",
+            "No Signup Required",
         ],
-        recommended: true,
-        cta: "Upgrade to Studio",
-        color: "indigo",
+        cta: "Get Started Free",
+        color: "slate",
     },
     {
-        id: "enterprise",
-        name: "Enterprise",
-        price: "Contact",
-        priceInr: "Contact",
-        period: "",
+        id: "pro",
+        name: "Pro",
+        price: "$1",
+        priceInr: "₹99",
+        period: "/month",
         features: [
-            "White-label Reports",
-            "API Access",
-            "Custom Integration",
-            "Dedicated Support",
+            "Unlimited PDF Downloads",
+            "Unlimited History Storage",
+            "Priority Processing",
+            "Advanced Analytics",
+            "Team Sharing",
+            "Export in Multiple Formats",
         ],
-        cta: "Contact Sales",
-        color: "purple",
+        recommended: true,
+        cta: "Upgrade to Pro",
+        color: "indigo",
     },
 ];
+
+// Enterprise plan shown separately at bottom
+const ENTERPRISE_PLAN = {
+    id: "enterprise",
+    name: "Enterprise",
+    price: "Contact",
+    priceInr: "Contact",
+    period: "",
+    features: [
+        "White-label Reports",
+        "API Access",
+        "Custom Integration",
+        "Dedicated Support",
+    ],
+    cta: "Contact Sales",
+    color: "purple",
+};
 
 import { useAuth } from "@/components/auth-provider";
 import { ContactModal } from "@/components/ContactModal";
@@ -337,7 +341,7 @@ export function PricingPlans({
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 max-w-4xl mx-auto">
 
                 {PLANS.map((plan) => (
                     <div
@@ -359,11 +363,9 @@ export function PricingPlans({
                                     plan.color === "emerald" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
                                         "bg-slate-500/10 text-slate-600 dark:text-slate-400"
                             }`}>
-                            {plan.id === "test" ? <Coffee className="w-5 h-5 md:w-6 md:h-6" /> :
+                            {plan.id === "free" ? <Zap className="w-5 h-5 md:w-6 md:h-6" /> :
                                 plan.id === "pro" ? <Sparkles className="w-5 h-5 md:w-6 md:h-6" /> :
-                                    plan.id === "agency" ? <Shield className="w-5 h-5 md:w-6 md:h-6" /> :
-                                        plan.id === "plus" ? <Rocket className="w-5 h-5 md:w-6 md:h-6" /> :
-                                            <Zap className="w-5 h-5 md:w-6 md:h-6" />}
+                                    <Rocket className="w-5 h-5 md:w-6 md:h-6" />}
                         </div>
 
                         <h3 className="text-lg md:text-xl font-bold text-foreground mb-2">{plan.name}</h3>
@@ -462,18 +464,41 @@ export function PricingPlans({
                 <div className="h-[1px] w-12 bg-border-dim"></div>
             </div>
 
-            <div className="mt-16 text-center bg-card border border-border-dim rounded-2xl p-8 max-w-3xl mx-auto">
-                <h4 className="text-lg font-bold text-foreground mb-4">Enterprise Custom Plans</h4>
-                <p className="text-muted-text mb-6">
-                    Need more than 5 seats or custom API integration? We offer tailored solutions for large design teams.
-                </p>
-                <button
-                    onClick={() => handleSubscribe('enterprise')}
-                    className="text-accent-primary font-bold hover:underline"
-                >
-                    Contact Enterprise Support →
-                </button>
-            </div >
+            <div className="mt-16 bg-gradient-to-br from-purple-500/5 to-indigo-500/5 border border-purple-500/20 rounded-3xl p-8 md:p-12 max-w-3xl mx-auto">
+                <div className="flex flex-col items-center text-center">
+                    <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-6">
+                        <Rocket className="w-8 h-8 text-purple-500" />
+                    </div>
+                    <h3 className="text-2xl md:text-3xl font-bold text-foreground mb-3">Enterprise Custom Plans</h3>
+                    <p className="text-muted-text text-sm md:text-base mb-8 max-w-xl">
+                        Need white-label reports or custom API integration? We offer tailored solutions for design teams and agencies.
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 w-full max-w-2xl">
+                        <div className="flex flex-col items-center gap-2 text-center">
+                            <Shield className="w-6 h-6 text-purple-400" />
+                            <span className="text-xs font-bold text-muted-text">White-label Reports</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-2 text-center">
+                            <Zap className="w-6 h-6 text-purple-400" />
+                            <span className="text-xs font-bold text-muted-text">API Access</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-2 text-center">
+                            <CreditCard className="w-6 h-6 text-purple-400" />
+                            <span className="text-xs font-bold text-muted-text">Custom Integration</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-2 text-center">
+                            <User className="w-6 h-6 text-purple-400" />
+                            <span className="text-xs font-bold text-muted-text">Dedicated Support</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setIsContactModalOpen(true)}
+                        className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/40 hover:scale-105 flex items-center gap-2"
+                    >
+                        Contact Sales <ArrowRight className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
 
             {/* Razorpay Backdrop & Loading State */}
             <AnimatePresence>
