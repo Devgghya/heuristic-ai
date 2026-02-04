@@ -24,6 +24,21 @@ interface Plan {
 
 const PLANS: Plan[] = [
     {
+        id: "test",
+        name: "Developer Test",
+        price: "$1",
+        priceInr: "$1",
+        period: "/one-time",
+        features: [
+            "Test Payment Flow",
+            "7 Days Access",
+            "All Pro Features",
+            "For Testing Only",
+        ],
+        cta: "Test Payment ($1)",
+        color: "emerald",
+    },
+    {
         id: "pro",
         name: "Pro Analyst",
         price: "$6",
@@ -88,11 +103,18 @@ export function PricingPlans({
     refreshUsage?: () => void
 }) {
     const { user } = useAuth();
+
+    // Check if user is admin
+    const isAdmin = user?.email && process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map(e => e.trim()).includes(user.email);
     const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
     const [cancelling, setCancelling] = useState(false);
     const [region, setRegion] = useState<"IN" | "GLOBAL">("GLOBAL");
+    const [currencyOverride, setCurrencyOverride] = useState<"IN" | "GLOBAL" | null>(null);
     const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+
+    // Effective region for pricing display (admin can override)
+    const displayRegion = isAdmin && currencyOverride ? currencyOverride : region;
 
     const handleCancelSubscription = async () => {
         if (!window.confirm("Are you sure you want to cancel your subscription? You'll still have access until the current period ends.")) return;
@@ -158,11 +180,32 @@ export function PricingPlans({
             return;
         }
 
+        // Handle non-Indian region payments with PayPal
         if (region === "GLOBAL") {
-            // Placeholder for Lemon Squeezy / Global Payment
-            alert("Global payments via Lemon Squeezy are coming soon!");
+            setLoadingPlan(planId);
+            try {
+                const res = await fetch("/api/payment/paypal-checkout", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ planId }),
+                });
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.details || data.error || "Failed to create PayPal checkout");
+                }
+
+                const { approvalUrl } = await res.json();
+                window.location.href = approvalUrl;
+            } catch (error: any) {
+                console.error(error);
+                alert(`PayPal checkout failed: ${error.message}`);
+                setLoadingPlan(null);
+            }
             return;
         }
+
+
 
         if (!window.Razorpay) {
             alert("Razorpay SDK failed to load. Please check your internet connection.");
@@ -288,10 +331,28 @@ export function PricingPlans({
                         </button>
                     </div>
 
+                    {/* Admin Currency Toggle */}
+                    {isAdmin && (
+                        <div className="flex items-center gap-1 md:gap-2 p-1 bg-card border border-amber-500/30 rounded-xl w-full sm:w-auto">
+                            <button
+                                onClick={() => setCurrencyOverride("GLOBAL")}
+                                className={`flex-1 sm:flex-none px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition-all ${displayRegion === "GLOBAL" ? "bg-amber-500 text-white shadow-md" : "text-muted-text hover:text-foreground"}`}
+                            >
+                                USD $
+                            </button>
+                            <button
+                                onClick={() => setCurrencyOverride("IN")}
+                                className={`flex-1 sm:flex-none px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition-all ${displayRegion === "IN" ? "bg-amber-500 text-white shadow-md" : "text-muted-text hover:text-foreground"}`}
+                            >
+                                INR ₹
+                            </button>
+                        </div>
+                    )}
+
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
 
                 {PLANS.map((plan) => (
                     <div
@@ -310,18 +371,20 @@ export function PricingPlans({
                         <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center mb-4 md:mb-6 self-start ${plan.color === "indigo" ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" :
                             plan.color === "purple" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400" :
                                 plan.color === "blue" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" :
-                                    "bg-slate-500/10 text-slate-600 dark:text-slate-400"
+                                    plan.color === "emerald" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
+                                        "bg-slate-500/10 text-slate-600 dark:text-slate-400"
                             }`}>
-                            {plan.id === "pro" ? <Sparkles className="w-5 h-5 md:w-6 md:h-6" /> :
-                                plan.id === "agency" ? <Shield className="w-5 h-5 md:w-6 md:h-6" /> :
-                                    plan.id === "plus" ? <Rocket className="w-5 h-5 md:w-6 md:h-6" /> :
-                                        <Zap className="w-5 h-5 md:w-6 md:h-6" />}
+                            {plan.id === "test" ? <Coffee className="w-5 h-5 md:w-6 md:h-6" /> :
+                                plan.id === "pro" ? <Sparkles className="w-5 h-5 md:w-6 md:h-6" /> :
+                                    plan.id === "agency" ? <Shield className="w-5 h-5 md:w-6 md:h-6" /> :
+                                        plan.id === "plus" ? <Rocket className="w-5 h-5 md:w-6 md:h-6" /> :
+                                            <Zap className="w-5 h-5 md:w-6 md:h-6" />}
                         </div>
 
                         <h3 className="text-lg md:text-xl font-bold text-foreground mb-2">{plan.name}</h3>
                         <div className="flex items-baseline gap-1 mb-4 md:mb-6">
                             <span className="text-4xl font-black text-foreground">
-                                {plan.id === "enterprise" ? "Contact" : region === "IN" ? (
+                                {plan.id === "enterprise" ? "Contact" : displayRegion === "IN" ? (
                                     billingCycle === "annual" && plan.id !== "free"
                                         ? `₹${(parseInt(plan.priceInr.replace("₹", "")) * 0.8).toFixed(0)}`
                                         : plan.priceInr
@@ -338,8 +401,8 @@ export function PricingPlans({
                                     </span>
                                     {billingCycle === "annual" && plan.id !== "free" && plan.id !== "enterprise" && (
                                         <span className="text-[10px] text-accent-primary font-bold mt-1 uppercase tracking-tighter">
-                                            Billed {region === "IN" ? "₹" : "$"}{
-                                                region === "IN"
+                                            Billed {displayRegion === "IN" ? "₹" : "$"}{
+                                                displayRegion === "IN"
                                                     ? (parseInt(plan.priceInr.replace("₹", "")) * 12 * 0.8).toFixed(0)
                                                     : (parseInt(plan.price.replace("$", "")) * 12 * 0.8).toFixed(0)
                                             }/yr
@@ -355,7 +418,8 @@ export function PricingPlans({
                                     <Check className={`w-5 h-5 shrink-0 mt-0.5 ${plan.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
                                         plan.color === "purple" ? "text-purple-600 dark:text-purple-400" :
                                             plan.color === "blue" ? "text-blue-600 dark:text-blue-400" :
-                                                "text-emerald-600 dark:text-emerald-400"
+                                                plan.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
+                                                    "text-slate-600 dark:text-slate-400"
                                         }`} />
                                     {feature}
                                 </li>
@@ -408,7 +472,7 @@ export function PricingPlans({
                 <div className="h-[1px] w-12 bg-border-dim"></div>
                 <p className="text-[10px] md:text-xs font-black uppercase tracking-widest text-muted-text flex items-center gap-2">
                     <CreditCard className="w-3 h-3" />
-                    {region === "IN" ? "Securely processed by Razorpay" : "Securely processed by Lemon Squeezy"}
+                    {displayRegion === "IN" ? "Securely processed by Razorpay" : "Securely processed by PayPal"}
                 </p>
                 <div className="h-[1px] w-12 bg-border-dim"></div>
             </div>
@@ -450,9 +514,9 @@ export function PricingPlans({
                                 </div>
                                 <h3 className="text-xl font-bold text-foreground mb-2">Secure Checkout</h3>
                                 <p className="text-muted-text text-sm mb-6">
-                                    {region === "IN"
+                                    {displayRegion === "IN"
                                         ? "We're securely initializing your session with Razorpay. Please do not refresh."
-                                        : "We're securely initializing your session with Lemon Squeezy. Please do not refresh."
+                                        : "We're securely initializing your session with PayPal. Please do not refresh."
                                     }
                                 </p>
                                 <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-text">
