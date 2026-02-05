@@ -6,6 +6,7 @@ import { Zap, LayoutDashboard, ShieldCheck, Image as ImageIcon, Rocket, Eye, Git
 import { useState, useEffect, useRef } from "react";
 import { motion, useScroll, useTransform, useSpring } from "framer-motion";
 import Link from "next/link";
+import NextImage from "next/image";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function HomePageClient() {
@@ -82,7 +83,7 @@ export default function HomePageClient() {
                 {/* Navigation Header */}
                 <div className="absolute top-0 left-0 right-0 z-50 max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 flex justify-between items-center">
                     <div className="flex items-center gap-2 md:gap-3">
-                        <img src="/uixscore-logo.png" alt="UIXScore" className="w-8 h-8 md:w-10 md:h-10 rounded-xl object-contain drop-shadow-2xl" />
+                        <NextImage src="/uixscore-logo.png" alt="UIXScore" width={40} height={40} className="w-8 h-8 md:w-10 md:h-10 rounded-xl object-contain drop-shadow-2xl" priority />
                         <h1 className="text-xl md:text-2xl font-black text-foreground tracking-tight">UIXScore<span className="text-indigo-500">.</span></h1>
                     </div>
 
@@ -101,7 +102,7 @@ export default function HomePageClient() {
                                 )}
                                 {user && (
                                     <Link href="/dashboard" className="md:hidden">
-                                        <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 flex items-center justify-center font-bold text-sm">
+                                        <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-bold text-sm">
                                             {user.firstName?.[0] || user.email[0].toUpperCase()}
                                         </div>
                                     </Link>
@@ -121,7 +122,7 @@ export default function HomePageClient() {
                         transition={{ duration: 0.8, ease: "easeOut" }}
                         className="inline-block mb-6"
                     >
-                        <span className="px-4 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 text-sm font-bold tracking-wider uppercase backdrop-blur-xl">
+                        <span className="px-4 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-sm font-bold tracking-wider uppercase backdrop-blur-xl">
                             The New Standard in UI Auditing
                         </span>
                     </motion.div>
@@ -225,9 +226,9 @@ export default function HomePageClient() {
 
                 <div className="grid md:grid-cols-3 gap-8">
                     {[
-                        { icon: Rocket, title: "Site Crawler", desc: "Batch audit entire sites. Screenshot every page and surface regressions automatically.", bgColor: "bg-blue-500/10", textColor: "text-blue-400", href: "/dashboard?mode=crawler", delay: 0 },
-                        { icon: GitCompare, title: "Competitor Compare", desc: "Run audits on competitor UIs and compare scores side-by-side.", bgColor: "bg-purple-500/10", textColor: "text-purple-400", href: "/compare", delay: 0.2 },
-                        { icon: Eye, title: "Accessibility Testing", desc: "Persona-based testing: low-vision, keyboard-only, screen reader flows.", bgColor: "bg-emerald-500/10", textColor: "text-emerald-400", href: "/dashboard?mode=accessibility", delay: 0.4 },
+                        { icon: Rocket, title: "Site Crawler", desc: "Batch audit entire sites. Screenshot every page and surface regressions automatically.", bgColor: "bg-blue-500/10", textColor: "text-blue-600 dark:text-blue-400", href: "/dashboard?mode=crawler", delay: 0 },
+                        { icon: GitCompare, title: "Competitor Compare", desc: "Run audits on competitor UIs and compare scores side-by-side.", bgColor: "bg-purple-500/10", textColor: "text-purple-600 dark:text-purple-400", href: "/compare", delay: 0.2 },
+                        { icon: Eye, title: "Accessibility Testing", desc: "Persona-based testing: low-vision, keyboard-only, screen reader flows.", bgColor: "bg-emerald-500/10", textColor: "text-emerald-600 dark:text-emerald-400", href: "/dashboard?mode=accessibility", delay: 0.4 },
                     ].map((feature, idx) => {
                         const Icon = feature.icon;
                         const CardComponent = (feature.href ? Link : "div") as any;
@@ -252,7 +253,7 @@ export default function HomePageClient() {
                                         </div>
                                         <h4 className="text-xl font-bold mb-3 text-foreground">{feature.title}</h4>
                                         <p className="text-sm text-muted-text leading-relaxed">{feature.desc}</p>
-                                        {feature.href && <p className="text-xs text-indigo-500 mt-6 font-bold group-hover:translate-x-1 transition-transform duration-300 flex items-center gap-1">Launch Feature <ArrowRight className="w-3 h-3" /></p>}
+                                        {feature.href && <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-6 font-bold group-hover:translate-x-1 transition-transform duration-300 flex items-center gap-1">Launch Feature <ArrowRight className="w-3 h-3" /></p>}
                                     </div>
                                 </CardComponent>
                             </motion.div>

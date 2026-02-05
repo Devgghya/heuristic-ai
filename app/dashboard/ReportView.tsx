@@ -1,4 +1,5 @@
 "use client";
+// Force rebuild stamp: 1
 
 import { motion } from "framer-motion";
 import {
@@ -26,7 +27,7 @@ export default function ReportView({ data, uiTitle }: ReportViewProps) {
     const score = data.score || 0;
 
     // Color determination for score
-    const scoreColor = score >= 80 ? "text-emerald-400" : score >= 60 ? "text-amber-400" : "text-red-400";
+    const scoreColor = score >= 80 ? "text-emerald-600 dark:text-emerald-400" : score >= 60 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
     const scoreBg = score >= 80 ? "bg-emerald-500/10 border-emerald-500/30" : score >= 60 ? "bg-amber-500/10 border-amber-500/30" : "bg-red-500/10 border-red-500/30";
 
     return (
@@ -39,7 +40,7 @@ export default function ReportView({ data, uiTitle }: ReportViewProps) {
                         <span className="bg-accent-primary text-white text-[10px] font-black px-2 py-0.5 rounded tracking-widest uppercase">AI AUDIT</span>
                         <span className="text-muted-text text-xs font-medium">{new Date().toLocaleDateString()}</span>
                         {data.target_url && (
-                            <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                            <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
                                 {data.target_url.replace(/^https?:\/\//, '')}
                             </span>
                         )}
@@ -70,9 +71,9 @@ export default function ReportView({ data, uiTitle }: ReportViewProps) {
                                 <Radar
                                     name="UX Metrics"
                                     dataKey="A"
-                                    stroke="var(--accent)"
+                                    stroke="var(--color-accent-primary)"
                                     strokeWidth={3}
-                                    fill="var(--accent)"
+                                    fill="var(--color-accent-primary)"
                                     fillOpacity={0.2}
                                 />
                             </RadarChart>
@@ -110,16 +111,16 @@ export default function ReportView({ data, uiTitle }: ReportViewProps) {
 
             {/* EXECUTIVE SUMMARY */}
             {data.summary?.audit && (
-                <div className="bg-gradient-to-r from-indigo-900/20 to-purple-900/20 border border-indigo-500/20 rounded-2xl p-4 md:p-8">
-                    <h3 className="text-lg md:text-xl font-bold mb-6 text-indigo-200">Executive Strategic Audit</h3>
+                <div className="bg-white dark:bg-gradient-to-r dark:from-indigo-900/20 dark:to-purple-900/20 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl p-4 md:p-8 shadow-sm dark:shadow-none">
+                    <h3 className="text-lg md:text-xl font-bold mb-6 text-slate-900 dark:text-indigo-200">Executive Strategic Audit</h3>
                     <div className="space-y-6">
                         {data.summary.audit.map((item: any, idx: number) => (
                             <div key={idx}>
-                                <h4 className="font-bold text-white text-lg mb-2">{item.title}</h4>
-                                <p className="text-indigo-100/70 mb-3">{item.issue}</p>
-                                <div className="bg-indigo-500/10 p-4 rounded-lg border border-indigo-500/20">
-                                    <strong className="text-indigo-400 text-xs uppercase tracking-wider block mb-1">Strategic Recommendation</strong>
-                                    <p className="text-sm text-white">{item.solution}</p>
+                                <h4 className="font-bold text-black dark:text-white text-lg mb-2">{item.title}</h4>
+                                <p className="text-slate-700 dark:text-indigo-100/70 mb-3">{item.issue}</p>
+                                <div className="bg-indigo-50 dark:bg-indigo-500/10 p-4 rounded-lg border border-indigo-100 dark:border-indigo-500/20">
+                                    <strong className="text-indigo-700 dark:text-indigo-400 text-xs uppercase tracking-wider block mb-1">Strategic Recommendation</strong>
+                                    <p className="text-sm text-slate-900 dark:text-white">{item.solution}</p>
                                 </div>
                             </div>
                         ))}
