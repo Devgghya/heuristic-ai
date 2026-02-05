@@ -161,6 +161,23 @@ export default function HomePageClient() {
                         </Link>
                     </motion.div>
 
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.8, delay: 0.8 }}
+                        className="mt-12 flex justify-center"
+                    >
+                        <a href="https://www.producthunt.com/products/uixscore?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-uixscore" target="_blank" rel="noopener noreferrer">
+                            <img
+                                src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1073900&theme=dark"
+                                alt="UIXScore - Fix UX flaws and accessibility bugs in 15 seconds | Product Hunt"
+                                width="250"
+                                height="54"
+                                className="w-[250px] h-[54px] hover:scale-105 transition-transform duration-300"
+                            />
+                        </a>
+                    </motion.div>
+
                 </motion.div>
             </section>
 
@@ -262,10 +279,21 @@ export default function HomePageClient() {
                 </div>
             </section>
             <footer className="border-t border-border-dim bg-card/30 backdrop-blur-lg">
-                <div className="max-w-7xl mx-auto px-6 py-12 text-muted-text text-sm flex flex-col md:flex-row justify-between items-center gap-4">
-                    <p>
-                        © {new Date().getFullYear()} UIXScore. All rights reserved.
-                    </p>
+                <div className="max-w-7xl mx-auto px-6 py-12 text-muted-text text-sm flex flex-col md:flex-row justify-between items-center gap-8">
+                    <div className="flex flex-col items-center md:items-start gap-4">
+                        <p>
+                            © {new Date().getFullYear()} UIXScore. All rights reserved.
+                        </p>
+                        <a href="https://www.producthunt.com/products/uixscore?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-uixscore" target="_blank" rel="noopener noreferrer">
+                            <img
+                                src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1073900&theme=dark"
+                                alt="UIXScore - Fix UX flaws and accessibility bugs in 15 seconds | Product Hunt"
+                                width="250"
+                                height="54"
+                                className="w-[180px] h-auto hover:opacity-80 transition-opacity"
+                            />
+                        </a>
+                    </div>
                     <p className="flex items-center gap-1">
                         Built by <a href="https://devu.is-great.net" target="_blank" rel="noopener noreferrer" className="text-foreground hover:text-indigo-500 font-bold transition-colors">Devgghya Kulshrestha</a>
                     </p>
