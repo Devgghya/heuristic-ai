@@ -5,11 +5,15 @@ import type { Metadata } from "next";
 
 
 export const metadata: Metadata = {
-  title: "UIXScore",
-  description: "AI-powered UI/UX Audits",
+  title: {
+    default: "UIXScore - AI-Powered UX Audits",
+    template: "%s | UIXScore",
+  },
+  description: "Automated heuristic evaluation and accessibility testing for modern web apps.",
   icons: {
     icon: "/uixscore-logo.png",
   },
+  metadataBase: new URL('https://uixscore.com'),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
