@@ -158,16 +158,16 @@ export default function ReportView({ data, uiTitle, imageUrl }: ReportViewProps)
 
             {/* EXECUTIVE SUMMARY */}
             {data.summary?.audit && (
-                <div className="bg-white dark:bg-gradient-to-r dark:from-indigo-900/20 dark:to-purple-900/20 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl p-4 md:p-8 shadow-sm dark:shadow-none">
-                    <h3 className="text-lg md:text-xl font-bold mb-6 text-slate-900 dark:text-indigo-200">Executive Strategic Audit</h3>
+                <div className="bg-white dark:bg-card border border-indigo-200 dark:border-border-dim rounded-2xl p-4 md:p-8 shadow-sm dark:shadow-none">
+                    <h3 className="text-lg md:text-xl font-bold mb-6 text-slate-900 dark:text-foreground">Executive Strategic Audit</h3>
                     <div className="space-y-6">
                         {data.summary.audit.map((item: any, idx: number) => (
                             <div key={idx}>
-                                <h4 className="font-bold text-black dark:text-white text-lg mb-2">{item.title}</h4>
-                                <p className="text-slate-700 dark:text-indigo-100/70 mb-3">{item.issue}</p>
-                                <div className="bg-indigo-50 dark:bg-indigo-500/10 p-4 rounded-lg border border-indigo-100 dark:border-indigo-500/20">
-                                    <strong className="text-indigo-700 dark:text-indigo-400 text-xs uppercase tracking-wider block mb-1">Strategic Recommendation</strong>
-                                    <p className="text-sm text-slate-900 dark:text-white">{item.solution}</p>
+                                <h4 className="font-bold text-black dark:text-foreground text-lg mb-2">{item.title}</h4>
+                                <p className="text-slate-700 dark:text-muted-text mb-3">{item.issue}</p>
+                                <div className="bg-indigo-50 dark:bg-accent-primary/10 p-4 rounded-lg border border-indigo-100 dark:border-accent-primary/30">
+                                    <strong className="text-indigo-700 dark:text-accent-primary text-xs uppercase tracking-wider block mb-1">Strategic Recommendation</strong>
+                                    <p className="text-sm text-slate-900 dark:text-foreground/90">{item.solution}</p>
                                 </div>
                             </div>
                         ))}
