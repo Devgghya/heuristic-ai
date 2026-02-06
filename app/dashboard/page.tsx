@@ -942,10 +942,10 @@ function DashboardContent() {
                         </label>
                       </div>
                     ) : (
-                      <label className="border-2 border-dashed border-indigo-200 dark:border-indigo-800 bg-slate-50 dark:bg-slate-900/50 rounded-2xl h-48 flex flex-col items-center justify-center hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer group">
-                        <Upload className="w-8 h-8 text-indigo-500 dark:text-indigo-400 mb-4 group-hover:scale-110 transition-transform" />
+                      <label className="border-2 border-dashed border-border-dim bg-background rounded-2xl h-48 flex flex-col items-center justify-center hover:bg-foreground/5 hover:border-accent-primary/50 transition-all cursor-pointer group">
+                        <Upload className="w-8 h-8 text-accent-primary mb-4 group-hover:scale-110 transition-transform" />
                         <p className="text-foreground font-bold text-lg">Click to Upload</p>
-                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">or Paste from Clipboard (Ctrl+V)</p>
+                        <p className="text-muted-text text-sm mt-1">or Paste from Clipboard (Ctrl+V)</p>
                         <input type="file" multiple onChange={handleFileChange} className="hidden" />
                       </label>
                     )
