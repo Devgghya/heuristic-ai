@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { sql } from '@vercel/postgres';
 
 const JWT_SECRET = new TextEncoder().encode(
     process.env.JWT_SECRET || 'fallback-secret-change-me'
@@ -37,7 +38,24 @@ export async function getSession(): Promise<AuthUser | null> {
     const cookieStore = await cookies();
     const token = cookieStore.get('auth_token')?.value;
     if (!token) return null;
-    return verifyToken(token);
+
+    const user = await verifyToken(token);
+    if (!user) return null;
+
+    // Validate user still exists in database (for immediate logout on deletion)
+    try {
+        const { rows } = await sql`SELECT id FROM users WHERE id = ${user.id}`;
+        if (rows.length === 0) {
+            // User was deleted, invalidate session
+            console.log(`[Auth] User ${user.id} no longer exists, invalidating session`);
+            return null;
+        }
+    } catch (error) {
+        console.error('[Auth] Session validation error:', error);
+        return null;
+    }
+
+    return user;
 }
 
 export async function setSession(token: string) {

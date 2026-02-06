@@ -169,20 +169,80 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
         }
 
-        // Execute De deletion
-        // Note: Using ANY for array parameter if needed, or loop. Vercel Postgres supports = ANY
-        // But safe way is to delete from dependent tables first if no cascade
-
-        // Assuming CASCADE is set up or we rely on logic. 
-        // For safety, let's delete strictly.
-
+        // Execute cascade deletion
+        // Delete from all related tables before deleting user
         const ids = userIds as string[];
-        // Cast columns to text to avoid UUID mismatch errors
-        await sql`DELETE FROM user_usage WHERE user_id::text = ANY(${ids as any}::text[])`;
-        await sql`DELETE FROM audits WHERE user_id::text = ANY(${ids as any}::text[])`;
-        await sql`DELETE FROM users WHERE id::text = ANY(${ids as any}::text[])`;
+        let deletionLog: string[] = [];
 
-        return NextResponse.json({ success: true, count: userIds.length });
+        console.log(`[User Deletion] Starting cascade deletion for ${ids.length} user(s): ${ids.join(', ')}`);
+
+        // Get user emails for password_resets and verification_codes deletion
+        const { rows: userEmails } = await sql`SELECT email FROM users WHERE id::text = ANY(${ids as any}::text[])`;
+        const emails = userEmails.map(row => row.email);
+
+        // 1. Delete password reset tokens
+        try {
+            if (emails.length > 0) {
+                await sql`DELETE FROM password_resets WHERE email = ANY(${emails as any}::text[])`;
+                deletionLog.push(`✅ Deleted password_resets for ${emails.length} email(s)`);
+            }
+        } catch (error: any) {
+            deletionLog.push(`⚠️ password_resets: ${error.message}`);
+        }
+
+        // 2. Delete verification codes
+        try {
+            if (emails.length > 0) {
+                await sql`DELETE FROM verification_codes WHERE email = ANY(${emails as any}::text[])`;
+                deletionLog.push(`✅ Deleted verification_codes for ${emails.length} email(s)`);
+            }
+        } catch (error: any) {
+            // Table might not exist, that's okay
+            deletionLog.push(`⚠️ verification_codes: ${error.message}`);
+        }
+
+        // 3. Delete payment orders
+        try {
+            const paymentResult = await sql`DELETE FROM payment_orders WHERE user_id::text = ANY(${ids as any}::text[])`;
+            deletionLog.push(`✅ Deleted ${paymentResult.rowCount || 0} payment_orders`);
+        } catch (error: any) {
+            deletionLog.push(`⚠️ payment_orders: ${error.message}`);
+        }
+
+        // 4. Delete user usage data
+        try {
+            const usageResult = await sql`DELETE FROM user_usage WHERE user_id::text = ANY(${ids as any}::text[])`;
+            deletionLog.push(`✅ Deleted ${usageResult.rowCount || 0} user_usage records`);
+        } catch (error: any) {
+            deletionLog.push(`❌ user_usage: ${error.message}`);
+            throw error; // This is critical, should not fail
+        }
+
+        // 5. Delete audits
+        try {
+            const auditResult = await sql`DELETE FROM audits WHERE user_id::text = ANY(${ids as any}::text[])`;
+            deletionLog.push(`✅ Deleted ${auditResult.rowCount || 0} audits`);
+        } catch (error: any) {
+            deletionLog.push(`❌ audits: ${error.message}`);
+            throw error; // This is critical, should not fail
+        }
+
+        // 6. Finally, delete users
+        try {
+            const userResult = await sql`DELETE FROM users WHERE id::text = ANY(${ids as any}::text[])`;
+            deletionLog.push(`✅ Deleted ${userResult.rowCount || 0} users`);
+        } catch (error: any) {
+            deletionLog.push(`❌ users: ${error.message}`);
+            throw error; // This is critical, should not fail
+        }
+
+        console.log(`[User Deletion] Complete:`, deletionLog.join(' | '));
+
+        return NextResponse.json({
+            success: true,
+            count: userIds.length,
+            log: deletionLog
+        });
 
     } catch (error: any) {
         console.error("Admin Bulk Delete Error:", error);
