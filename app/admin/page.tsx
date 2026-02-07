@@ -120,23 +120,57 @@ export default function AdminPage() {
     const [ipDetails, setIpDetails] = useState<any>(null);
     const [ipLoading, setIpLoading] = useState(false);
 
-    const handleIpClick = (ip: string) => {
+    const handleIpClick = async (ip: string) => {
         if (!ip) return;
+
+        // Check for local/private IPs that can't be geolocated
+        const privateIpPatterns = ['127.0.0.1', 'localhost', '::1', '192.168.', '10.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.'];
+        const isPrivateIp = privateIpPatterns.some(pattern => ip.startsWith(pattern) || ip === pattern);
+
+        if (isPrivateIp) {
+            setIpModalOpen(true);
+            setIpLoading(false);
+            setIpDetails({ error: true, message: "This is a local/private IP address and cannot be geolocated.", ip });
+            return;
+        }
+
         setIpModalOpen(true);
         setIpLoading(true);
         setIpDetails(null);
 
-        // Use ipapi.co for free IP geolocation
-        fetch(`https://ipapi.co/${ip}/json/`)
-            .then(res => res.json())
-            .then(data => {
-                setIpDetails(data);
-                setIpLoading(false);
-            })
-            .catch(err => {
-                console.error("IP Fetch Error", err);
-                setIpLoading(false);
-            });
+        try {
+            // Try ip-api.com first (more reliable, 45 requests/min free)
+            const response = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,zip,lat,lon,isp,org,as,query`);
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                setIpDetails({
+                    ip: data.query,
+                    city: data.city,
+                    region: data.regionName,
+                    country: data.country,
+                    postal: data.zip,
+                    latitude: data.lat,
+                    longitude: data.lon,
+                    org: data.org || data.isp,
+                    asn: data.as
+                });
+            } else {
+                // Fallback to ipapi.co
+                const fallbackRes = await fetch(`https://ipapi.co/${ip}/json/`);
+                const fallbackData = await fallbackRes.json();
+                if (fallbackData.error) {
+                    setIpDetails({ error: true, message: fallbackData.reason || "Unable to locate IP", ip });
+                } else {
+                    setIpDetails(fallbackData);
+                }
+            }
+        } catch (err) {
+            console.error("IP Fetch Error", err);
+            setIpDetails({ error: true, message: "Failed to fetch IP location. Service may be unavailable.", ip });
+        } finally {
+            setIpLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -671,8 +705,30 @@ export default function AdminPage() {
                                                 "Unknown"
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-right text-sm text-muted-text font-mono">
-                                            {user.last_active ? new Date(user.last_active).toLocaleDateString() : "-"}
+                                        <td className="px-6 py-4 text-right">
+                                            {user.last_active ? (
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-xs font-bold text-foreground">
+                                                        {new Date(user.last_active).toLocaleDateString()}
+                                                    </span>
+                                                    <span className="text-[10px] text-muted-text font-mono">
+                                                        {new Date(user.last_active).toLocaleTimeString()}
+                                                    </span>
+                                                    <span className="text-[10px] text-indigo-400 mt-0.5">
+                                                        {(() => {
+                                                            const diff = Date.now() - new Date(user.last_active).getTime();
+                                                            const mins = Math.floor(diff / 60000);
+                                                            const hours = Math.floor(diff / 3600000);
+                                                            const days = Math.floor(diff / 86400000);
+                                                            if (mins < 1) return "Just now";
+                                                            if (mins < 60) return `${mins}m ago`;
+                                                            if (hours < 24) return `${hours}h ago`;
+                                                            if (days < 30) return `${days}d ago`;
+                                                            return `${Math.floor(days / 30)}mo ago`;
+                                                        })()}
+                                                    </span>
+                                                </div>
+                                            ) : "-"}
                                         </td>
                                     </tr>
                                 ))}
@@ -726,8 +782,39 @@ export default function AdminPage() {
                                                 ))}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-xs text-muted-text">{new Date(guest.firstAudit).toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 text-xs text-muted-text text-right">{new Date(guest.lastAudit).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-bold text-foreground">
+                                                    {new Date(guest.firstAudit).toLocaleDateString()}
+                                                </span>
+                                                <span className="text-[10px] text-muted-text font-mono">
+                                                    {new Date(guest.firstAudit).toLocaleTimeString()}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex flex-col items-end">
+                                                <span className="text-xs font-bold text-foreground">
+                                                    {new Date(guest.lastAudit).toLocaleDateString()}
+                                                </span>
+                                                <span className="text-[10px] text-muted-text font-mono">
+                                                    {new Date(guest.lastAudit).toLocaleTimeString()}
+                                                </span>
+                                                <span className="text-[10px] text-indigo-400 mt-0.5">
+                                                    {(() => {
+                                                        const diff = Date.now() - new Date(guest.lastAudit).getTime();
+                                                        const mins = Math.floor(diff / 60000);
+                                                        const hours = Math.floor(diff / 3600000);
+                                                        const days = Math.floor(diff / 86400000);
+                                                        if (mins < 1) return "Just now";
+                                                        if (mins < 60) return `${mins}m ago`;
+                                                        if (hours < 24) return `${hours}h ago`;
+                                                        if (days < 30) return `${days}d ago`;
+                                                        return `${Math.floor(days / 30)}mo ago`;
+                                                    })()}
+                                                </span>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
