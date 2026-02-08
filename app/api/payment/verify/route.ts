@@ -74,6 +74,24 @@ export async function POST(req: Request) {
                   updated_at = NOW()
             `;
 
+            // Send Confirmation Email
+            if (session?.email) {
+                try {
+                    const { sendPaymentConfirmationEmail } = await import("@/lib/email");
+                    const formattedDate = expiresAt.toLocaleDateString('en-GB'); // DD/MM/YYYY
+                    const formattedPlan = planId.charAt(0).toUpperCase() + planId.slice(1);
+
+                    await sendPaymentConfirmationEmail({
+                        to: session.email,
+                        planName: formattedPlan,
+                        expiryDate: formattedDate
+                    });
+                } catch (emailError) {
+                    console.error("Failed to send payment confirmation email:", emailError);
+                    // Don't block the response, just log the error
+                }
+            }
+
             return NextResponse.json({ success: true });
         } else {
             return NextResponse.json({ error: "Invalid signature" }, { status: 400 });

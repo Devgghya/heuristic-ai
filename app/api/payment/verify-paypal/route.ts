@@ -102,6 +102,23 @@ export async function POST(req: NextRequest) {
                 WHERE order_id = ${orderID}
             `;
 
+            // Send Confirmation Email
+            if (user?.email) {
+                try {
+                    const { sendPaymentConfirmationEmail } = await import("@/lib/email");
+                    const formattedDate = expiresAt.toLocaleDateString('en-GB');
+                    const formattedPlan = planId.charAt(0).toUpperCase() + planId.slice(1);
+
+                    await sendPaymentConfirmationEmail({
+                        to: user.email,
+                        planName: formattedPlan,
+                        expiryDate: formattedDate
+                    });
+                } catch (emailError) {
+                    console.error("Failed to send PayPal confirmation email:", emailError);
+                }
+            }
+
             return NextResponse.json({ success: true, plan: planId });
         } else {
             return NextResponse.json({ error: "Payment not completed", status: captureData.status }, { status: 400 });
